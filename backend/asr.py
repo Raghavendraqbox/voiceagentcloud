@@ -392,9 +392,11 @@ class RivaASRHandler:
         )
 
         SILENCE_RMS_THRESHOLD = 0.008   # RMS below this = silence
-        SILENCE_FRAMES_TO_COMMIT = 12   # 1.2 s of silence ends utterance
+        SILENCE_FRAMES_TO_COMMIT = 6    # 0.6 s of silence ends utterance (was 1.2 s)
         MIN_SPEECH_FRAMES = 3           # ignore blips shorter than 0.3 s
 
+        # audio_buf stores numpy arrays (not flat floats) — O(1) append per chunk,
+        # concatenated once at transcription time instead of rebuilding a giant list.
         audio_buf: list = []
         silence_frames = 0
         speech_started = False
@@ -426,10 +428,10 @@ class RivaASRHandler:
                 speech_started = True
                 silence_frames = 0
                 speech_frame_count += 1
-                audio_buf.extend(samples.tolist())
+                audio_buf.append(samples)          # store array, not individual floats
             else:
                 if speech_started:
-                    audio_buf.extend(samples.tolist())
+                    audio_buf.append(samples)
                     silence_frames += 1
                     if (
                         silence_frames >= SILENCE_FRAMES_TO_COMMIT
@@ -443,7 +445,8 @@ class RivaASRHandler:
 
     async def _whisper_transcribe(self, model, audio_buf: list, np) -> None:
         """Run Whisper transcription in a thread and emit the result."""
-        audio_array = np.array(audio_buf, dtype=np.float32)
+        # audio_buf is a list of numpy arrays — concatenate once, never rebuilt as flat list
+        audio_array = np.concatenate(audio_buf).astype(np.float32)
         loop = asyncio.get_running_loop()
         try:
             segments, _ = await loop.run_in_executor(

@@ -234,7 +234,14 @@ class RivaTTSHandler:
         """
         Stream text through Microsoft Edge TTS, decode to 16-bit mono PCM at
         the configured sample rate, and forward chunks to the WebSocket client.
+
+        MP3 encoding introduces encoder-delay priming (up to 1152 near-zero
+        samples at the start) and the PyAV resampler flush appends FIR tail
+        samples at the end.  Both produce audible clicks/pops.  We trim any
+        leading and trailing near-silence before streaming.
         """
+        import numpy as np
+
         target_rate = config.riva.tts_sample_rate_hz  # 22050
 
         # Collect the MP3 stream from edge-tts
@@ -255,16 +262,27 @@ class RivaTTSHandler:
             layout="mono",
             rate=target_rate,
         )
-        pcm_bytes = b""
+        pcm_frames: list = []
         for frame in container.decode(audio=0):
             for resampled in resampler.resample(frame):
-                pcm_bytes += bytes(resampled.planes[0])
-        for resampled in resampler.resample(None):   # flush
-            pcm_bytes += bytes(resampled.planes[0])
+                pcm_frames.append(np.frombuffer(bytes(resampled.planes[0]), dtype=np.int16))
+        for resampled in resampler.resample(None):   # flush resampler
+            pcm_frames.append(np.frombuffer(bytes(resampled.planes[0]), dtype=np.int16))
         container.close()
 
-        if not pcm_bytes:
+        if not pcm_frames:
             return True
+
+        pcm = np.concatenate(pcm_frames)
+
+        # Trim MP3 encoder-delay priming (leading silence) and resampler
+        # flush ringing (trailing silence) — threshold ~0.5% of full scale.
+        TRIM_THRESHOLD = 160  # Int16 units
+        nonzero = np.where(np.abs(pcm) > TRIM_THRESHOLD)[0]
+        if len(nonzero) == 0:
+            return True  # entirely silent — skip
+        pcm = pcm[nonzero[0] : nonzero[-1] + 1]
+        pcm_bytes = pcm.tobytes()
 
         # Stream PCM in 200ms chunks to the browser
         bytes_per_chunk = target_rate * 2 // 5  # 200ms of 16-bit mono

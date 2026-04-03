@@ -318,7 +318,7 @@ const SEND_INTERVAL_MS = 100;      // Send audio chunks every 100ms
 const VAD_THRESHOLD    = 0.012;    // RMS energy threshold for interrupt
 const VAD_HOLD_FRAMES  = 8;        // Consecutive frames above threshold to confirm speech
 const PLAYBACK_SAMPLE_RATE = 22050; // Must match RIVA_TTS_SAMPLE_RATE in config.py
-const PREBUFFER_MS     = 200;      // Pre-buffer TTS audio before starting playback
+const PREBUFFER_MS     = 300;      // Pre-buffer TTS audio before starting playback
 
 // ---------------------------------------------------------------------------
 // State
@@ -664,6 +664,8 @@ function onJSONReceived(raw) {
       botSpeaking = true;
       ttsPrebufferDone = false;
       ttsScheduledUntil = 0;
+      // Resume in case browser auto-suspended the context between turns
+      if (ttsAudioCtx && ttsAudioCtx.state !== "running") ttsAudioCtx.resume();
       setOrb("bot-speaking", "Agent speaking…");
       break;
 

@@ -4,6 +4,47 @@
 
 ---
 
+## [1.3.0] - 2026-04-03
+
+### Fixed
+
+- **Transcription latency was too high (~1.2 s after speech ended).**
+  Three compounding issues:
+  1. `SILENCE_FRAMES_TO_COMMIT` was 12 (1.2 s). Reduced to 6 (0.6 s) so
+     utterances are committed twice as fast.
+  2. `audio_buf.extend(samples.tolist())` converted each 100 ms numpy chunk
+     into individual Python floats and appended them one by one — O(n) list
+     growth per frame.  Changed to `audio_buf.append(samples)` (store the
+     numpy array itself) and `np.concatenate(audio_buf)` at transcription
+     time — O(1) per frame, single copy at commit.
+  3. `np.array(audio_buf, dtype=np.float32)` in `_whisper_transcribe` had to
+     rebuild the entire flat array from a Python list.  Now uses
+     `np.concatenate(audio_buf)` directly on the stored arrays.
+
+- **TTS output had audible clicks and noise at start/end of each response.**
+  MP3 encoding introduces encoder-delay priming: the encoder prepends up to
+  1152 near-zero samples before real audio begins.  The PyAV resampler flush
+  (`resampler.resample(None)`) appends FIR filter tail samples at the end.
+  Both produce clicks/pops when the browser's Web Audio scheduler plays the
+  PCM.  Fixed by trimming all leading and trailing samples below a 160
+  Int16-unit threshold (~0.5 % of full scale) from the decoded PCM before
+  streaming.
+
+- **`ttsAudioCtx` could be auto-suspended by the browser between turns.**
+  Added `ttsAudioCtx.resume()` call in the `tts_start` handler so the
+  playback context is guaranteed to be running before audio chunks arrive.
+
+### Changed
+
+- `backend/asr.py` — `SILENCE_FRAMES_TO_COMMIT` 12 → 6; audio buffer stores
+  numpy arrays instead of flat floats.
+- `backend/tts.py` — PCM silence trimming in `_synthesize_edge_tts` using
+  numpy; decoded frames stored as arrays and concatenated once.
+- `frontend/index.html` — `PREBUFFER_MS` 200 → 300 ms to absorb scheduling
+  jitter; `ttsAudioCtx.resume()` on `tts_start`.
+
+---
+
 ## [1.2.0] - 2026-04-03
 
 ### Fixed

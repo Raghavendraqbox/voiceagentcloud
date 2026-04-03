@@ -217,14 +217,18 @@ class OllamaClient:
     async def _stub_response(
         self, prompt: str, session_id: str
     ) -> AsyncIterator[str]:
-        """Stub LLM used when Ollama is not reachable (for testing)."""
+        """Stub LLM used when Ollama is not reachable (for testing).
+
+        Returns only neutral, non-specific replies that don't hallucinate
+        product details or pricing.
+        """
         import random
         stubs = [
-            "Got it, let me check that for you.",
-            "Alright, the cheapest option is the 400MB hourly bundle for $1. Want me to activate that?",
-            "Sure thing! Could you confirm your account number so I can pull up your details?",
-            "Let me check that. We have a few bundles available — which size are you looking for?",
-            "Absolutely, I can help with that. Is there anything else you need?",
+            "Got it, let me look into that for you.",
+            "Sure thing! Could you confirm your account details so I can help?",
+            "Of course, I can help with that. Could you tell me a bit more?",
+            "Absolutely. Let me pull that up for you right now.",
+            "I understand. Could you give me just a moment while I check?",
         ]
         response = random.choice(stubs)
         logger.warning(
@@ -232,7 +236,6 @@ class OllamaClient:
             response,
             extra={"session_id": session_id},
         )
-        # Simulate streaming delay
         for word in response.split():
             await asyncio.sleep(0.05)
         yield response

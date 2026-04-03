@@ -338,10 +338,12 @@ let vadFrameCount  = 0;
 let interruptSent  = false;
 
 // TTS playback queue
+let ttsAudioCtx       = null;     // Dedicated AudioContext for TTS at PLAYBACK_SAMPLE_RATE
+let ttsSourceNodes    = [];       // Currently scheduled AudioBufferSourceNodes (for instant stop)
 let ttsQueue          = [];       // Buffered PCM Int16 arrays waiting to play
 let ttsBufferedMs     = 0;        // How many ms we have buffered
 let ttsPlaying        = false;    // AudioContext is currently scheduled
-let ttsScheduledUntil = 0;        // audioCtx.currentTime at which last buffer ends
+let ttsScheduledUntil = 0;        // ttsAudioCtx.currentTime at which last buffer ends
 let ttsPrebufferDone  = false;
 
 // ---------------------------------------------------------------------------
@@ -399,11 +401,16 @@ async function startSession() {
     return;
   }
 
-  // Create AudioContext — may be created at 16kHz if browser supports it,
-  // otherwise we resample in the worklet.
+  // Mic capture context — 16 kHz for ASR
   audioCtx = new (window.AudioContext || window.webkitAudioContext)({
     sampleRate: 16000,
     latencyHint: "interactive",
+  });
+
+  // Separate TTS playback context — exactly 22050 Hz so PCM plays without resampling
+  ttsAudioCtx = new (window.AudioContext || window.webkitAudioContext)({
+    sampleRate: PLAYBACK_SAMPLE_RATE,
+    latencyHint: "playback",
   });
 
   await setupAudioPipeline();
@@ -429,6 +436,11 @@ function stopSession() {
   if (analyserNode)  { analyserNode.disconnect();  analyserNode  = null; }
   if (audioCtx)      { audioCtx.close();           audioCtx      = null; }
   if (mediaStream)   { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
+
+  // Tear down TTS playback context
+  ttsSourceNodes.forEach(s => { try { s.stop(0); } catch (_) {} });
+  ttsSourceNodes = [];
+  if (ttsAudioCtx)  { ttsAudioCtx.close();        ttsAudioCtx   = null; }
 
   // Tear down WebSocket
   if (ws && ws.readyState === WebSocket.OPEN) { ws.close(); }
@@ -683,7 +695,7 @@ function onJSONReceived(raw) {
  * Audio format: 16-bit signed PCM, mono, 22050 Hz (matches RIVA TTS config).
  */
 function onAudioReceived(arrayBuffer) {
-  if (!audioCtx) return;
+  if (!ttsAudioCtx) return;
 
   // Parse Int16 PCM
   const int16 = new Int16Array(arrayBuffer);
@@ -706,23 +718,27 @@ function onAudioReceived(arrayBuffer) {
  * Uses AudioBufferSourceNode chaining to eliminate inter-chunk gaps.
  */
 function drainTTSQueue() {
-  if (!audioCtx) return;
+  if (!ttsAudioCtx) return;
 
   // Determine the start time for the next chunk
-  const now = audioCtx.currentTime;
+  const now = ttsAudioCtx.currentTime;
   if (ttsScheduledUntil < now) ttsScheduledUntil = now;
 
   while (ttsQueue.length > 0) {
     const int16 = ttsQueue.shift();
     const float32 = int16ToFloat32(int16);
 
-    const buffer = audioCtx.createBuffer(1, float32.length, PLAYBACK_SAMPLE_RATE);
+    const buffer = ttsAudioCtx.createBuffer(1, float32.length, PLAYBACK_SAMPLE_RATE);
     buffer.copyToChannel(float32, 0);
 
-    const source = audioCtx.createBufferSource();
+    const source = ttsAudioCtx.createBufferSource();
     source.buffer = buffer;
-    source.connect(audioCtx.destination);
+    source.connect(ttsAudioCtx.destination);
     source.start(ttsScheduledUntil);
+    ttsSourceNodes.push(source);
+    source.addEventListener("ended", () => {
+      ttsSourceNodes = ttsSourceNodes.filter(n => n !== source);
+    });
 
     ttsScheduledUntil += buffer.duration;
   }
@@ -739,19 +755,15 @@ function int16ToFloat32(int16Array) {
   return float32;
 }
 
-/** Immediately stop TTS playback by suspending and resuming the AudioContext */
+/** Immediately stop TTS playback without touching the mic AudioContext */
 function stopTTSPlayback() {
   ttsQueue = [];
   ttsBufferedMs = 0;
   ttsPrebufferDone = false;
   ttsScheduledUntil = 0;
-
-  if (audioCtx) {
-    // Suspend briefly to flush scheduled buffers, then resume for mic capture
-    audioCtx.suspend().then(() => {
-      audioCtx.resume();
-    });
-  }
+  // Stop every scheduled buffer source instantly — mic context is never suspended
+  ttsSourceNodes.forEach(s => { try { s.stop(0); } catch (_) {} });
+  ttsSourceNodes = [];
 }
 
 // ---------------------------------------------------------------------------

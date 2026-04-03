@@ -4,6 +4,46 @@
 
 ---
 
+## [1.2.0] - 2026-04-03
+
+### Fixed
+
+- **TTS audio quality was muffled due to AudioContext sample rate mismatch.**
+  The browser's mic capture `AudioContext` was created at 16 kHz and also
+  used for TTS playback. Scheduling 22050 Hz `AudioBuffer`s inside a 16 kHz
+  context caused the browser to resample audio down, producing muffled,
+  degraded speech. A dedicated `ttsAudioCtx` is now created at exactly
+  22050 Hz for playback only, eliminating all resampling.
+
+- **Full duplex was broken: mic capture froze during bot interrupts.**
+  `stopTTSPlayback()` called `audioCtx.suspend()` on the shared
+  `AudioContext`. Since the same context drives the `AudioWorklet` mic
+  capture, suspending it silenced the microphone at the exact moment the
+  user tried to interrupt the bot. Fixed by tracking each scheduled
+  `AudioBufferSourceNode` in a `ttsSourceNodes[]` array and calling
+  `.stop(0)` on them directly — the mic `AudioContext` is never touched.
+
+- **LLM stub hallucinated product details unprompted.**
+  The offline stub response pool (`llm.py`) contained the hardcoded line
+  `"Alright, the cheapest option is the 400MB hourly bundle for $1. Want me
+  to activate that?"` which was randomly returned on every turn when Ollama
+  was not running. All stub responses are now neutral acknowledgements
+  (`"Got it, let me look into that for you."` etc.) with no invented
+  product, pricing, or plan details.
+
+### Changed
+
+- `frontend/index.html` — `ttsAudioCtx` (new) handles all TTS playback at
+  22050 Hz; `audioCtx` is now mic-capture only at 16 kHz.
+- `frontend/index.html` — `stopTTSPlayback()` stops source nodes via
+  `.stop(0)` instead of `audioCtx.suspend()/resume()`.
+- `frontend/index.html` — `ttsSourceNodes[]` array tracks live
+  `AudioBufferSourceNode`s and cleans up via `ended` event listeners.
+- `llm.py` — stub response pool stripped of all hardcoded product/price
+  references.
+
+---
+
 ## [1.1.0] - 2026-04-03
 
 ### Fixed

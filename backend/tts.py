@@ -198,34 +198,101 @@ class RivaTTSHandler:
 
     async def _synthesize_stub(self, text: str) -> bool:
         """
-        Generate synthetic silence as a stub when Riva is unavailable.
+        Synthesize real speech using edge-tts (Microsoft Edge neural TTS)
+        when Riva is unavailable.  Audio is decoded from MP3 to PCM via PyAV
+        and resampled to the configured TTS sample rate before streaming.
 
-        Produces 100ms of silence PCM per word to simulate streaming latency.
+        Falls back to silence only if edge-tts or av cannot be imported.
 
         Args:
-            text: Text to "speak".
+            text: Text to speak.
 
         Returns:
             True if completed, False if cancelled.
         """
-        import struct
+        try:
+            import io
+            import av
+            import edge_tts
+        except ImportError:
+            logger.warning(
+                "edge-tts / av not installed — TTS produces silence",
+                extra={"session_id": self.session_id},
+            )
+            return await self._synthesize_silence(text)
 
-        words = text.split()
-        samples_per_word = config.riva.tts_sample_rate_hz // 5  # 200ms per word
-        silence_chunk = struct.pack(
-            f"<{samples_per_word}h", *([0] * samples_per_word)
+        try:
+            return await self._synthesize_edge_tts(text, edge_tts, av, io)
+        except Exception as exc:
+            logger.error(
+                "edge-tts error (%s) — falling back to silence", exc,
+                extra={"session_id": self.session_id},
+            )
+            return await self._synthesize_silence(text)
+
+    async def _synthesize_edge_tts(self, text: str, edge_tts, av, io) -> bool:
+        """
+        Stream text through Microsoft Edge TTS, decode to 16-bit mono PCM at
+        the configured sample rate, and forward chunks to the WebSocket client.
+        """
+        target_rate = config.riva.tts_sample_rate_hz  # 22050
+
+        # Collect the MP3 stream from edge-tts
+        communicate = edge_tts.Communicate(text, voice="en-US-AriaNeural")
+        audio_bytes = b""
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_bytes += chunk["data"]
+
+        if not audio_bytes or self._cancel_event.is_set():
+            return not self._cancel_event.is_set()
+
+        # Decode MP3 → 16-bit signed mono PCM at target_rate using PyAV
+        buf = io.BytesIO(audio_bytes)
+        container = av.open(buf)
+        resampler = av.audio.resampler.AudioResampler(
+            format="s16",
+            layout="mono",
+            rate=target_rate,
         )
+        pcm_bytes = b""
+        for frame in container.decode(audio=0):
+            for resampled in resampler.resample(frame):
+                pcm_bytes += bytes(resampled.planes[0])
+        for resampled in resampler.resample(None):   # flush
+            pcm_bytes += bytes(resampled.planes[0])
+        container.close()
 
-        for _ in words:
+        if not pcm_bytes:
+            return True
+
+        # Stream PCM in 200ms chunks to the browser
+        bytes_per_chunk = target_rate * 2 // 5  # 200ms of 16-bit mono
+        for i in range(0, len(pcm_bytes), bytes_per_chunk):
             if self._cancel_event.is_set():
                 logger.info(
-                    "TTS stub cancelled",
+                    "TTS edge-tts cancelled mid-stream",
                     extra={"session_id": self.session_id},
                 )
                 return False
+            await self._send_audio(pcm_bytes[i : i + bytes_per_chunk])
+            await asyncio.sleep(0)  # yield to event loop
 
+        return True
+
+    async def _synthesize_silence(self, text: str) -> bool:
+        """Last-resort fallback: send silence so the pipeline keeps moving."""
+        import struct
+
+        words = text.split()
+        samples_per_word = config.riva.tts_sample_rate_hz // 5
+        silence_chunk = struct.pack(f"<{samples_per_word}h", *([0] * samples_per_word))
+
+        for _ in words:
+            if self._cancel_event.is_set():
+                return False
             await self._send_audio(silence_chunk)
-            await asyncio.sleep(0.2)  # simulate word-paced streaming
+            await asyncio.sleep(0.2)
 
         return True
 

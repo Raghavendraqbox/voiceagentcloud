@@ -363,27 +363,131 @@ class RivaASRHandler:
 
     async def _run_stub_session(self) -> None:
         """
-        Fallback ASR stub used when nvidia-riva-client is not installed.
+        Fallback ASR using faster-whisper (tiny model, CPU) when Riva is
+        not available.  Accumulates real microphone PCM, detects speech/silence
+        boundaries via RMS energy, then transcribes each utterance.
 
-        Drains the audio queue silently and emits a placeholder transcript
-        every ~3 seconds to keep the pipeline alive during development.
+        Falls back to the original placeholder behaviour only if
+        faster-whisper cannot be imported.
         """
+        try:
+            import numpy as np
+            from faster_whisper import WhisperModel
+        except ImportError:
+            await self._run_original_stub_session()
+            return
+
+        logger.info(
+            "Loading Whisper tiny model (first run downloads ~75 MB)…",
+            extra={"session_id": self.session_id},
+        )
+        loop = asyncio.get_running_loop()
+        model: WhisperModel = await loop.run_in_executor(
+            None,
+            lambda: WhisperModel("tiny", device="cpu", compute_type="int8"),
+        )
+        logger.info(
+            "Whisper ASR ready — listening for real speech",
+            extra={"session_id": self.session_id},
+        )
+
+        SILENCE_RMS_THRESHOLD = 0.008   # RMS below this = silence
+        SILENCE_FRAMES_TO_COMMIT = 12   # 1.2 s of silence ends utterance
+        MIN_SPEECH_FRAMES = 3           # ignore blips shorter than 0.3 s
+
+        audio_buf: list = []
+        silence_frames = 0
+        speech_started = False
+        speech_frame_count = 0
+
+        while not self._stopped:
+            try:
+                chunk: bytes = await asyncio.wait_for(
+                    self.audio_queue.get(), timeout=0.5
+                )
+            except asyncio.TimeoutError:
+                # Flush buffer if speech ended but no new audio arrives
+                if (
+                    speech_started
+                    and silence_frames >= SILENCE_FRAMES_TO_COMMIT
+                    and speech_frame_count >= MIN_SPEECH_FRAMES
+                ):
+                    await self._whisper_transcribe(model, audio_buf, np)
+                    audio_buf = []
+                    speech_started = False
+                    silence_frames = 0
+                    speech_frame_count = 0
+                continue
+
+            samples = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 32768.0
+            rms = float(np.sqrt(np.mean(samples ** 2)))
+
+            if rms > SILENCE_RMS_THRESHOLD:
+                speech_started = True
+                silence_frames = 0
+                speech_frame_count += 1
+                audio_buf.extend(samples.tolist())
+            else:
+                if speech_started:
+                    audio_buf.extend(samples.tolist())
+                    silence_frames += 1
+                    if (
+                        silence_frames >= SILENCE_FRAMES_TO_COMMIT
+                        and speech_frame_count >= MIN_SPEECH_FRAMES
+                    ):
+                        await self._whisper_transcribe(model, audio_buf, np)
+                        audio_buf = []
+                        speech_started = False
+                        silence_frames = 0
+                        speech_frame_count = 0
+
+    async def _whisper_transcribe(self, model, audio_buf: list, np) -> None:
+        """Run Whisper transcription in a thread and emit the result."""
+        audio_array = np.array(audio_buf, dtype=np.float32)
+        loop = asyncio.get_running_loop()
+        try:
+            segments, _ = await loop.run_in_executor(
+                None,
+                lambda: model.transcribe(audio_array, language="en", beam_size=1),
+            )
+            text = " ".join(seg.text for seg in segments).strip()
+        except Exception as exc:
+            logger.error(
+                "Whisper transcription error: %s", exc,
+                extra={"session_id": self.session_id},
+            )
+            return
+
+        if not text:
+            return
+
+        logger.info(
+            "Whisper transcript: %s", text[:80],
+            extra={"session_id": self.session_id},
+        )
+        if not self.interrupt_event.is_set():
+            self.interrupt_event.set()
+        await self.transcript_queue.put(
+            TranscriptResult(text=text, is_final=True, confidence=1.0)
+        )
+
+    async def _run_original_stub_session(self) -> None:
+        """Legacy placeholder stub — used only when faster-whisper is absent."""
         logger.warning(
-            "Running ASR in STUB mode — no real transcription",
+            "faster-whisper not installed — ASR in placeholder stub mode",
             extra={"session_id": self.session_id},
         )
         counter = 0
         while not self._stopped:
-            # Drain any audio chunks to avoid queue build-up
             while not self.audio_queue.empty():
                 try:
                     self.audio_queue.get_nowait()
                 except asyncio.QueueEmpty:
                     break
-
             await asyncio.sleep(3.0)
             counter += 1
-            stub_text = f"stub transcript {counter}"
             await self.transcript_queue.put(
-                TranscriptResult(text=stub_text, is_final=True, confidence=1.0)
+                TranscriptResult(
+                    text=f"stub transcript {counter}", is_final=True, confidence=1.0
+                )
             )

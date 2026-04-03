@@ -4,6 +4,69 @@
 
 ---
 
+## [1.4.0] - 2026-04-03
+
+### Added
+
+- **Agent identity — Wesaal / Etisalat Afghanistan.**
+  Agent name is now Wesaal.  System prompt updated to reflect Etisalat
+  Afghanistan brand, instruct the agent never to volunteer product prices
+  or bundle names unprompted, and to say "Let me connect you to a
+  specialist" when it does not know an answer.
+
+- **Automatic greeting on session start.**
+  As soon as the WebSocket session is ready, Wesaal plays: *"Welcome to
+  Etisalat Afghanistan. I am Wesaal, your virtual assistant. Please tell
+  me your preferred language: English, Dari, or Pashto."* without waiting
+  for user input.
+
+- **Language selection flow.**
+  The first user utterance is treated as a language choice.  Regardless of
+  what is said, Wesaal confirms English ("I'll assist you in English
+  today.") and proceeds.  All subsequent turns are handled by the LLM.
+
+- **Claude API (Haiku) as LLM backend.**
+  `llm.py` now tries Ollama first; on connection failure it streams from
+  `claude-haiku-4-5-20251001` using the `ANTHROPIC_API_KEY` env variable,
+  falling back to a neutral neutral stub only if neither is available.
+  Responses are contextually relevant to what the user actually said.
+
+### Fixed
+
+- **TTS noise from resampling artifacts.**
+  edge-tts outputs 24 kHz audio; previous code resampled to 22050 Hz via a
+  complex FIR filter that introduced ringing artefacts.  The pipeline now
+  decodes at the native 24 kHz without any sample-rate conversion.
+  `PLAYBACK_SAMPLE_RATE` on the frontend updated to 24000 accordingly.
+  Voice changed to `en-US-JennyNeural` (higher perceived quality for
+  customer service scenarios).  A 20 ms linear fade-in/fade-out is applied
+  to each synthesised segment to prevent click artefacts at boundaries.
+
+- **Short words (e.g. "hello") silently swallowed.**
+  `MIN_SPEECH_FRAMES` reduced from 3 → 1 so even a single 100 ms voice
+  frame triggers a transcription commit.
+
+- **Subsequent speech appended to previous short utterance.**
+  When `MIN_SPEECH_FRAMES` wasn't met, `speech_started` stayed `True` and
+  the buffer kept accumulating.  Now the buffer is always reset once
+  `SILENCE_FRAMES_TO_COMMIT` is reached, regardless of whether the
+  transcription threshold was met.  A `MAX_SILENCE_FRAMES = 20` (2 s)
+  hard-reset also clears stale buffers unconditionally.
+
+### Changed
+
+- `config.py` — system prompt, agent name, Claude model setting.
+- `llm.py` — Claude API streaming path + `_build_claude_user_message`.
+- `session_manager.py` — `_play_hardcoded` helper; greeting + language
+  phase in `_llm_tts_loop`; `language_selected` flag on `Session`.
+- `asr.py` — `MIN_SPEECH_FRAMES` 3→1; always-reset on silence commit;
+  `MAX_SILENCE_FRAMES` hard-reset.
+- `tts.py` — 24 kHz native decode, `en-US-JennyNeural`, fade-in/out.
+- `frontend/index.html` — `PLAYBACK_SAMPLE_RATE` 22050→24000; page title
+  and header updated to "Wesaal / Etisalat Afghanistan".
+
+---
+
 ## [1.3.0] - 2026-04-03
 
 ### Fixed

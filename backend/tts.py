@@ -232,20 +232,25 @@ class RivaTTSHandler:
 
     async def _synthesize_edge_tts(self, text: str, edge_tts, av, io) -> bool:
         """
-        Stream text through Microsoft Edge TTS, decode to 16-bit mono PCM at
-        the configured sample rate, and forward chunks to the WebSocket client.
+        Stream text through Microsoft Edge TTS and forward clean PCM to the client.
 
-        MP3 encoding introduces encoder-delay priming (up to 1152 near-zero
-        samples at the start) and the PyAV resampler flush appends FIR tail
-        samples at the end.  Both produce audible clicks/pops.  We trim any
-        leading and trailing near-silence before streaming.
+        edge-tts natively outputs 24 kHz mono MP3.  We decode to 24 kHz s16 PCM
+        without any resampling (integer ratio = no FIR filter artifacts).
+
+        Noise-reduction steps applied to the decoded PCM:
+          1. Trim leading/trailing near-silence to remove MP3 encoder-delay
+             priming and decoder flush zero-padding.
+          2. Apply a 20 ms linear fade-in and fade-out to prevent clicks at
+             playback boundaries.
+
+        The frontend AudioContext must also be at 24 kHz (PLAYBACK_SAMPLE_RATE).
         """
         import numpy as np
 
-        target_rate = config.riva.tts_sample_rate_hz  # 22050
+        EDGE_TTS_RATE = 24000   # native edge-tts output rate — no resampling needed
 
         # Collect the MP3 stream from edge-tts
-        communicate = edge_tts.Communicate(text, voice="en-US-AriaNeural")
+        communicate = edge_tts.Communicate(text, voice="en-US-JennyNeural")
         audio_bytes = b""
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
@@ -254,19 +259,19 @@ class RivaTTSHandler:
         if not audio_bytes or self._cancel_event.is_set():
             return not self._cancel_event.is_set()
 
-        # Decode MP3 → 16-bit signed mono PCM at target_rate using PyAV
+        # Decode MP3 → 24 kHz mono s16 PCM using PyAV (no sample rate conversion)
         buf = io.BytesIO(audio_bytes)
         container = av.open(buf)
         resampler = av.audio.resampler.AudioResampler(
             format="s16",
             layout="mono",
-            rate=target_rate,
+            rate=EDGE_TTS_RATE,
         )
         pcm_frames: list = []
         for frame in container.decode(audio=0):
             for resampled in resampler.resample(frame):
                 pcm_frames.append(np.frombuffer(bytes(resampled.planes[0]), dtype=np.int16))
-        for resampled in resampler.resample(None):   # flush resampler
+        for resampled in resampler.resample(None):
             pcm_frames.append(np.frombuffer(bytes(resampled.planes[0]), dtype=np.int16))
         container.close()
 
@@ -275,17 +280,26 @@ class RivaTTSHandler:
 
         pcm = np.concatenate(pcm_frames)
 
-        # Trim MP3 encoder-delay priming (leading silence) and resampler
-        # flush ringing (trailing silence) — threshold ~0.5% of full scale.
-        TRIM_THRESHOLD = 160  # Int16 units
+        # 1. Trim leading / trailing near-silence (MP3 encoder-delay priming)
+        TRIM_THRESHOLD = 160  # ~0.5 % of Int16 full scale
         nonzero = np.where(np.abs(pcm) > TRIM_THRESHOLD)[0]
         if len(nonzero) == 0:
-            return True  # entirely silent — skip
+            return True
         pcm = pcm[nonzero[0] : nonzero[-1] + 1]
+
+        # 2. 20 ms linear fade-in / fade-out to prevent click at boundaries
+        fade_samples = int(EDGE_TTS_RATE * 0.020)
+        if len(pcm) > fade_samples * 2:
+            ramp = np.linspace(0.0, 1.0, fade_samples, dtype=np.float32)
+            pcm_f = pcm.astype(np.float32)
+            pcm_f[:fade_samples] *= ramp
+            pcm_f[-fade_samples:] *= ramp[::-1]
+            pcm = np.clip(pcm_f, -32768, 32767).astype(np.int16)
+
         pcm_bytes = pcm.tobytes()
 
-        # Stream PCM in 200ms chunks to the browser
-        bytes_per_chunk = target_rate * 2 // 5  # 200ms of 16-bit mono
+        # Stream PCM in 200 ms chunks to the browser
+        bytes_per_chunk = EDGE_TTS_RATE * 2 // 5  # 200 ms of 16-bit mono
         for i in range(0, len(pcm_bytes), bytes_per_chunk):
             if self._cancel_event.is_set():
                 logger.info(
@@ -294,7 +308,7 @@ class RivaTTSHandler:
                 )
                 return False
             await self._send_audio(pcm_bytes[i : i + bytes_per_chunk])
-            await asyncio.sleep(0)  # yield to event loop
+            await asyncio.sleep(0)
 
         return True
 

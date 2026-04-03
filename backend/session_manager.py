@@ -58,6 +58,7 @@ class Session:
     tts_cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
     asr_task: Optional[asyncio.Task] = field(default=None, init=False)
     llm_tts_task: Optional[asyncio.Task] = field(default=None, init=False)
+    language_selected: bool = field(default=False, init=False)
 
     # References to handler objects (set by SessionManager.create_session)
     asr_handler: Optional[RivaASRHandler] = field(default=None, init=False)
@@ -217,37 +218,65 @@ class SessionManager:
     # LLM + TTS co-routine (runs as background task per session)
     # ------------------------------------------------------------------
 
+    async def _play_hardcoded(
+        self,
+        session: Session,
+        send_json_cb: JsonSendCallback,
+        text: str,
+    ) -> None:
+        """
+        Synthesize and play a hardcoded string without going through the LLM.
+        Used for the greeting and language-confirmation turns.
+        """
+        session.tts_orchestrator = TTSOrchestrator(
+            session_id=session.session_id,
+            tts_handler=session.tts_handler,
+            cancel_event=session.tts_cancel_event,
+        )
+        orchestrator_task = asyncio.create_task(
+            session.tts_orchestrator.run(),
+            name=f"tts-hardcoded-{session.session_id}",
+        )
+        await send_json_cb({"type": "tts_start"})
+        await send_json_cb({"type": "bot_text_fragment", "text": text})
+        await session.tts_orchestrator.fragment_queue.put(text)
+        await session.tts_orchestrator.fragment_queue.put(None)
+        try:
+            await asyncio.wait_for(orchestrator_task, timeout=30.0)
+        except asyncio.TimeoutError:
+            orchestrator_task.cancel()
+        await send_json_cb({"type": "tts_end"})
+        session.memory.add_bot_turn(text)
+
     async def _llm_tts_loop(
         self,
         session: Session,
         send_json_cb: JsonSendCallback,
     ) -> None:
         """
-        Waits for final transcripts from ASR, runs the LLM, streams TTS.
+        Full conversation loop with greeting and language-selection phases.
 
-        This is the "brain" of the pipeline:
-        1. Block on `transcript_queue` for a final transcript.
-        2. Reset interrupt/cancel events.
-        3. Notify frontend that LLM is thinking.
-        4. Stream LLM tokens → sentence fragments → TTS fragment queue.
-        5. When LLM is done, sentinel TTS orchestrator, wait for it to finish.
-        6. Record full bot response in memory.
-        7. Notify frontend that TTS ended.
-        8. Go back to step 1.
-
-        Args:
-            session:      The current session.
-            send_json_cb: Sends control messages (tts_start, tts_end, etc.)
-                          to the frontend.
+        Phase 0 — Greeting: play welcome message + ask for language preference.
+        Phase 1 — Language: accept user's first response, confirm English.
+        Phase 2+ — Conversation: LLM handles all subsequent turns.
         """
         logger.info(
             "LLM/TTS loop started",
             extra={"session_id": session.session_id},
         )
 
+        # ------------------------------------------------------------------
+        # Phase 0: Greeting — no user input needed
+        # ------------------------------------------------------------------
+        greeting = (
+            "Welcome to Etisalat Afghanistan. I am Wesaal, your virtual assistant. "
+            "Please tell me your preferred language: English, Dari, or Pashto."
+        )
+        await self._play_hardcoded(session, send_json_cb, greeting)
+
         while True:
             # ----------------------------------------------------------
-            # 1. Wait for a final transcript
+            # Wait for a final transcript
             # ----------------------------------------------------------
             try:
                 transcript: TranscriptResult = await session.transcript_queue.get()
@@ -255,7 +284,6 @@ class SessionManager:
                 break
 
             if not transcript.is_final:
-                # Partial — already handled by ASR (interrupt event set)
                 continue
 
             user_text = transcript.text.strip()
@@ -268,43 +296,39 @@ class SessionManager:
                 extra={"session_id": session.session_id},
             )
 
-            # ----------------------------------------------------------
-            # 2. Stop any ongoing TTS
-            # ----------------------------------------------------------
+            # Stop any ongoing TTS, reset events
             session.cancel_tts()
-            # Give the orchestrator a moment to drain
             await asyncio.sleep(0.05)
             session.reset_for_new_turn()
 
-            # ----------------------------------------------------------
-            # 3. Record user turn
-            # ----------------------------------------------------------
             session.memory.add_user_turn(user_text)
-
-            # Notify frontend: user transcript confirmed
-            await send_json_cb(
-                {"type": "transcript_final", "text": user_text}
-            )
+            await send_json_cb({"type": "transcript_final", "text": user_text})
 
             # ----------------------------------------------------------
-            # 4. Stream LLM → TTS fragment queue
+            # Phase 1: Language selection (first user turn)
+            # ----------------------------------------------------------
+            if not session.language_selected:
+                session.language_selected = True
+                lang_confirm = "I'll assist you in English today. How can I help you?"
+                await self._play_hardcoded(session, send_json_cb, lang_confirm)
+                continue
+
+            # ----------------------------------------------------------
+            # Phase 2+: Normal LLM turn
             # ----------------------------------------------------------
             await send_json_cb({"type": "tts_start"})
 
-            # Create a fresh orchestrator for this response turn
             session.tts_orchestrator = TTSOrchestrator(
                 session_id=session.session_id,
                 tts_handler=session.tts_handler,
                 cancel_event=session.tts_cancel_event,
             )
-
             orchestrator_task = asyncio.create_task(
                 session.tts_orchestrator.run(),
                 name=f"tts-orch-{session.session_id}",
             )
 
             full_bot_response = ""
-
             try:
                 async for fragment in session.llm_client.stream_response(
                     user_query=user_text,
@@ -312,35 +336,23 @@ class SessionManager:
                     session_id=session.session_id,
                 ):
                     if session.tts_cancel_event.is_set():
-                        # User interrupted — stop feeding TTS
                         break
 
                     full_bot_response += fragment + " "
-
-                    # Notify frontend of streaming bot text
-                    await send_json_cb(
-                        {"type": "bot_text_fragment", "text": fragment}
-                    )
-
-                    # Push fragment to TTS orchestrator
+                    await send_json_cb({"type": "bot_text_fragment", "text": fragment})
                     await session.tts_orchestrator.fragment_queue.put(fragment)
 
             except asyncio.CancelledError:
                 break
             except Exception as exc:
                 logger.error(
-                    "LLM error: %s",
-                    exc,
+                    "LLM error: %s", exc,
                     extra={"session_id": session.session_id},
                 )
-                await send_json_cb(
-                    {"type": "error", "message": "LLM processing failed"}
-                )
+                await send_json_cb({"type": "error", "message": "LLM processing failed"})
 
-            # Sentinel to tell TTS orchestrator the stream is done
             await session.tts_orchestrator.fragment_queue.put(None)
 
-            # Wait for TTS to finish (or be cancelled)
             try:
                 await asyncio.wait_for(orchestrator_task, timeout=30.0)
             except asyncio.TimeoutError:
@@ -349,21 +361,14 @@ class SessionManager:
                 orchestrator_task.cancel()
                 break
 
-            # ----------------------------------------------------------
-            # 5. Record bot turn in memory
-            # ----------------------------------------------------------
             bot_text = full_bot_response.strip()
             if bot_text:
                 session.memory.add_bot_turn(bot_text)
 
             await send_json_cb({"type": "tts_end"})
-
             logger.info(
                 "Turn complete",
-                extra={
-                    "session_id": session.session_id,
-                    "bot_preview": bot_text[:60],
-                },
+                extra={"session_id": session.session_id, "bot_preview": bot_text[:60]},
             )
 
         logger.info(

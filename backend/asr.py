@@ -392,8 +392,10 @@ class RivaASRHandler:
         )
 
         SILENCE_RMS_THRESHOLD = 0.008   # RMS below this = silence
-        SILENCE_FRAMES_TO_COMMIT = 6    # 0.6 s of silence ends utterance (was 1.2 s)
-        MIN_SPEECH_FRAMES = 3           # ignore blips shorter than 0.3 s
+        SILENCE_FRAMES_TO_COMMIT = 6    # 0.6 s of silence ends utterance
+        MIN_SPEECH_FRAMES = 1           # accept even a single 100ms speech frame
+        MAX_SILENCE_FRAMES = 20         # 2 s hard-reset: prevents buffer accumulation
+                                        # when MIN_SPEECH_FRAMES not met (e.g. "hello")
 
         # audio_buf stores numpy arrays (not flat floats) — O(1) append per chunk,
         # concatenated once at transcription time instead of rebuilding a giant list.
@@ -433,11 +435,17 @@ class RivaASRHandler:
                 if speech_started:
                     audio_buf.append(samples)
                     silence_frames += 1
-                    if (
-                        silence_frames >= SILENCE_FRAMES_TO_COMMIT
-                        and speech_frame_count >= MIN_SPEECH_FRAMES
-                    ):
-                        await self._whisper_transcribe(model, audio_buf, np)
+                    if silence_frames >= SILENCE_FRAMES_TO_COMMIT:
+                        if speech_frame_count >= MIN_SPEECH_FRAMES:
+                            await self._whisper_transcribe(model, audio_buf, np)
+                        # Always reset — prevents short words from accumulating
+                        # into the next utterance when MIN_SPEECH_FRAMES isn't met
+                        audio_buf = []
+                        speech_started = False
+                        silence_frames = 0
+                        speech_frame_count = 0
+                    elif silence_frames >= MAX_SILENCE_FRAMES:
+                        # Hard-reset: too much silence with no commit
                         audio_buf = []
                         speech_started = False
                         silence_frames = 0

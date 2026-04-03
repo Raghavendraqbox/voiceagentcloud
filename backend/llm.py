@@ -76,12 +76,13 @@ class OllamaClient:
             Sentence fragments suitable for direct TTS synthesis.
         """
         prompt = self._build_prompt(user_query, memory)
+        claude_message = self._build_claude_user_message(user_query, memory)
         logger.debug(
             "LLM prompt built",
             extra={"session_id": session_id, "prompt_len": len(prompt)},
         )
 
-        async for fragment in self._stream_fragments(prompt, session_id):
+        async for fragment in self._stream_fragments(prompt, claude_message, session_id):
             yield fragment
 
     async def close(self) -> None:
@@ -122,15 +123,29 @@ class OllamaClient:
 
         return "\n\n".join(parts)
 
+    def _build_claude_user_message(self, user_query: str, memory) -> str:
+        """Build the user-turn text for the Claude messages API (no system prefix)."""
+        parts: list[str] = []
+        if self._retriever is not None:
+            rag_context = self._retriever.format_context(user_query)
+            if rag_context:
+                parts.append(rag_context)
+        history = memory.format_history()
+        if history:
+            parts.append(f"Conversation so far:\n{history}")
+        parts.append(f"Customer: {user_query}")
+        return "\n\n".join(parts)
+
     async def _stream_fragments(
-        self, prompt: str, session_id: str
+        self, prompt: str, claude_message: str, session_id: str
     ) -> AsyncIterator[str]:
         """
-        Open a streaming HTTP request to Ollama and yield sentence fragments.
+        Try Ollama first; on failure fall back to Claude API.
 
         Args:
-            prompt:     The assembled prompt string.
-            session_id: Used in log context.
+            prompt:         Ollama-format single-string prompt.
+            claude_message: User message text for the Claude messages API.
+            session_id:     Used in log context.
 
         Yields:
             Sentence fragments (strings).
@@ -187,23 +202,15 @@ class OllamaClient:
                 if buffer.strip():
                     yield buffer.strip()
 
-        except httpx.HTTPStatusError as exc:
-            logger.error(
-                "Ollama HTTP error %s: %s",
-                exc.response.status_code,
-                exc.response.text,
-                extra={"session_id": session_id},
-            )
-            async for fragment in self._stub_response(prompt, session_id):
-                yield fragment
-        except httpx.RequestError as exc:
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.warning(
-                "Ollama not reachable (%s) — using stub LLM",
+                "Ollama not reachable (%s) — falling back to Claude API",
                 exc,
                 extra={"session_id": session_id},
             )
-            async for fragment in self._stub_response(prompt, session_id):
+            async for fragment in self._stream_fragments_claude(claude_message, session_id):
                 yield fragment
+            return
 
         logger.info(
             "LLM response complete",
@@ -214,30 +221,77 @@ class OllamaClient:
             },
         )
 
-    async def _stub_response(
-        self, prompt: str, session_id: str
+    async def _stream_fragments_claude(
+        self, user_message: str, session_id: str
     ) -> AsyncIterator[str]:
-        """Stub LLM used when Ollama is not reachable (for testing).
-
-        Returns only neutral, non-specific replies that don't hallucinate
-        product details or pricing.
         """
+        Stream a response from Claude (Haiku) when Ollama is unavailable.
+
+        Uses the ANTHROPIC_API_KEY environment variable.  Falls back to the
+        neutral stub only if the key is not set or the API call fails.
+        """
+        import os
+        api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            logger.warning(
+                "ANTHROPIC_API_KEY not set — using neutral stub",
+                extra={"session_id": session_id},
+            )
+            async for fragment in self._neutral_stub(session_id):
+                yield fragment
+            return
+
+        try:
+            import anthropic as _anthropic
+            client = _anthropic.AsyncAnthropic(api_key=api_key)
+
+            buffer = ""
+            full_response = ""
+
+            async with client.messages.stream(
+                model=config.claude_model,
+                max_tokens=config.ollama.max_tokens,
+                system=config.system_prompt,
+                messages=[{"role": "user", "content": user_message}],
+            ) as stream:
+                async for token in stream.text_stream:
+                    buffer += token
+                    full_response += token
+
+                    fragment, buffer = self._split_fragment(buffer)
+                    if fragment:
+                        yield fragment
+
+            if buffer.strip():
+                yield buffer.strip()
+
+            logger.info(
+                "Claude response complete",
+                extra={
+                    "session_id": session_id,
+                    "preview": full_response[:80],
+                },
+            )
+
+        except Exception as exc:
+            logger.error(
+                "Claude API error (%s) — using neutral stub", exc,
+                extra={"session_id": session_id},
+            )
+            async for fragment in self._neutral_stub(session_id):
+                yield fragment
+
+    async def _neutral_stub(self, session_id: str) -> AsyncIterator[str]:
+        """Last-resort stub — neutral acknowledgement, no invented details."""
         import random
         stubs = [
-            "Got it, let me look into that for you.",
-            "Sure thing! Could you confirm your account details so I can help?",
+            "I understand. Could you give me a moment while I check on that?",
             "Of course, I can help with that. Could you tell me a bit more?",
-            "Absolutely. Let me pull that up for you right now.",
-            "I understand. Could you give me just a moment while I check?",
+            "Sure thing. Let me look into that for you right away.",
         ]
         response = random.choice(stubs)
-        logger.warning(
-            "LLM STUB response: %s",
-            response,
-            extra={"session_id": session_id},
-        )
-        for word in response.split():
-            await asyncio.sleep(0.05)
+        logger.warning("Neutral stub: %s", response, extra={"session_id": session_id})
+        await asyncio.sleep(0.1)
         yield response
 
     @staticmethod

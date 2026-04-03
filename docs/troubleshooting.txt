@@ -1,0 +1,29 @@
+TelecomNet Troubleshooting Guide — Customer Service Reference
+
+NO SIGNAL OR WEAK SIGNAL
+If a customer has no signal, ask them to check that airplane mode is off. Then ask them to restart the device. If the problem persists, check the coverage map at coverage.telecom.example for their location. Poor indoor coverage can sometimes be resolved by moving near a window. A network booster device is available for purchase at $29 for customers in low-coverage areas.
+If the device shows no SIM card, the SIM may have shifted. Ask the customer to power off, remove and reinsert the SIM, and power back on. If this does not help, the SIM may need replacement at a store for $2.
+
+CANNOT MAKE OR RECEIVE CALLS
+Verify the customer has available balance or an active call bundle. Outgoing calls require a positive balance or active minute bundle. If balance is zero, direct to top-up. Check that call barring is not enabled by dialing star 33 hash to check outgoing call barring status.
+
+NO DATA OR SLOW DATA
+Confirm an active data bundle exists by dialing star 123 hash. If no bundle is active, offer to activate one. Ask the customer to check APN settings. For Android: Name TelecomNet, APN internet.telecom, no username or password. For iPhone: Settings Cellular Cellular Data Network, APN internet.telecom. Ask the customer to toggle mobile data off and on. If still slow, check if the fair-use threshold has been reached on an unlimited bundle — speeds drop to 1 Mbps after 10GB.
+
+BUNDLE NOT ACTIVATING
+Bundle activation normally completes in under 30 seconds. If no confirmation SMS arrived, ask the customer to check their balance to confirm the deduction occurred. If the deduction happened but the bundle is not showing, escalate to technical support with the transaction timestamp. If no deduction occurred, the purchase did not complete — ask the customer to retry.
+
+BILLING DISPUTES
+Disputed charges must be reported within 60 days of the bill date. Pull up the customer account to verify the charge in question. Common disputed charges include: bundle auto-renewal when balance was insufficient leading to roaming data charges, international SMS sent accidentally, or premium-rate number calls. Offer a one-time goodwill credit for charges under $5 without supervisor approval if the customer has been with TelecomNet for more than 12 months.
+
+PORTING ISSUES
+If a port-in request is pending for more than 24 hours, check the port tracker at porttrack.telecom.example with the reference number. Common delay causes include: incorrect donor carrier account number, active contract with the donor carrier, or a fraud hold on the number. Contact the porting team at porting@telecom.example for manual escalation.
+
+ROAMING NOT WORKING
+Confirm the roaming add-on is active on the account. If traveling, the device may need to select the network manually. On iPhone go to Settings Carrier and turn off automatic selection, then select a network manually. On Android go to Settings Network and Internet Mobile Network Network Operators. If still not working, the visited country may not be in the roaming partner list — check the current list at roaming.telecom.example.
+
+APP ISSUES
+If the MyTelecom app will not load, ask the customer to force-close and reopen it. If login fails, ask them to reset the password at account.telecom.example slash reset. If the app shows incorrect balance, it may be a caching issue — ask the customer to pull down to refresh or log out and log back in. For app crashes on iOS, updating to the latest version from the App Store usually resolves them.
+
+ESCALATION PROCEDURES
+Escalate to Tier 2 support for: network faults affecting a specific area, account compromise or unauthorized account changes, billing disputes over $20, repeated failed bundle activations, and any legal or regulatory requests. Transfer the call by saying you are connecting them to a specialist and use the internal transfer code 8100. Provide the specialist with a brief verbal summary before connecting.

@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voice AI Agent</title>
+  <style>
+    /* ------------------------------------------------------------------ */
+    /* Reset & base                                                          */
+    /* ------------------------------------------------------------------ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --border:    #2a2d3a;
+      --accent:    #4f8ef7;
+      --accent-2:  #a78bfa;
+      --danger:    #f87171;
+      --success:   #34d399;
+      --text:      #e2e8f0;
+      --muted:     #64748b;
+      --radius:    12px;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: "Inter", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+      padding: 24px;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Header                                                               */
+    /* ------------------------------------------------------------------ */
+    header {
+      text-align: center;
+    }
+
+    header h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    header p {
+      color: var(--muted);
+      font-size: 0.875rem;
+      margin-top: 4px;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Status orb                                                           */
+    /* ------------------------------------------------------------------ */
+    .orb-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .orb {
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #3b4a6b, #0f1117);
+      box-shadow: 0 0 0 0 rgba(79, 142, 247, 0.4);
+      transition: background 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    /* Idle */
+    .orb.idle {
+      background: radial-gradient(circle at 35% 35%, #2d3146, #0f1117);
+      box-shadow: 0 0 20px rgba(79, 142, 247, 0.08);
+    }
+
+    /* User speaking */
+    .orb.user-speaking {
+      background: radial-gradient(circle at 35% 35%, #2563eb, #1e40af);
+      animation: pulse-user 1s ease-in-out infinite;
+    }
+
+    @keyframes pulse-user {
+      0%   { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+      70%  { box-shadow: 0 0 0 22px rgba(59, 130, 246, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+    }
+
+    /* Bot speaking */
+    .orb.bot-speaking {
+      background: radial-gradient(circle at 35% 35%, #7c3aed, #4c1d95);
+      animation: pulse-bot 1.2s ease-in-out infinite;
+    }
+
+    @keyframes pulse-bot {
+      0%   { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.7); }
+      70%  { box-shadow: 0 0 0 26px rgba(139, 92, 246, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0); }
+    }
+
+    /* Thinking */
+    .orb.thinking {
+      background: radial-gradient(circle at 35% 35%, #d97706, #92400e);
+      animation: pulse-think 0.8s ease-in-out infinite;
+    }
+
+    @keyframes pulse-think {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.6; }
+    }
+
+    .orb-label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      min-height: 1.2em;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Main button                                                          */
+    /* ------------------------------------------------------------------ */
+    #btn-start {
+      width: 180px;
+      padding: 14px 0;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.12s, box-shadow 0.2s, background 0.2s;
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 4px 20px rgba(79, 142, 247, 0.35);
+    }
+
+    #btn-start:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(79, 142, 247, 0.5); }
+    #btn-start:active { transform: translateY(0); }
+    #btn-start.active {
+      background: var(--danger);
+      box-shadow: 0 4px 20px rgba(248, 113, 113, 0.4);
+    }
+    #btn-start:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Transcript card                                                      */
+    /* ------------------------------------------------------------------ */
+    .card {
+      width: 100%;
+      max-width: 640px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+    }
+
+    .card-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    #transcript-user {
+      font-size: 0.92rem;
+      color: var(--accent);
+      min-height: 1.4em;
+      word-break: break-word;
+    }
+
+    #transcript-partial {
+      font-size: 0.85rem;
+      color: var(--muted);
+      font-style: italic;
+      margin-top: 4px;
+      min-height: 1.2em;
+    }
+
+    #transcript-bot {
+      font-size: 0.92rem;
+      color: var(--text);
+      min-height: 1.4em;
+      word-break: break-word;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Debug / status bar                                                   */
+    /* ------------------------------------------------------------------ */
+    #status-bar {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    #status-bar span {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* VAD energy meter                                                     */
+    /* ------------------------------------------------------------------ */
+    .meter-wrapper {
+      width: 100%;
+      max-width: 640px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .meter-label {
+      font-size: 0.7rem;
+      color: var(--muted);
+      white-space: nowrap;
+      width: 60px;
+    }
+
+    .meter-track {
+      flex: 1;
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    #energy-bar {
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      border-radius: 3px;
+      transition: width 0.08s ease;
+    }
+
+    #energy-bar.above-threshold {
+      background: var(--success);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Voice AI Agent</h1>
+    <p>Telecom Customer Service — powered by NVIDIA Riva + LLaMA 3</p>
+  </header>
+
+  <!-- Status orb -->
+  <div class="orb-wrapper">
+    <div class="orb idle" id="orb"></div>
+    <div class="orb-label" id="orb-label">Idle</div>
+  </div>
+
+  <!-- Start/Stop button -->
+  <button id="btn-start" onclick="toggleSession()">Start Talking</button>
+
+  <!-- Live energy meter (VAD) -->
+  <div class="meter-wrapper">
+    <span class="meter-label">Mic level</span>
+    <div class="meter-track"><div id="energy-bar"></div></div>
+  </div>
+
+  <!-- User transcript -->
+  <div class="card">
+    <div class="card-label">You said</div>
+    <div id="transcript-user">—</div>
+    <div id="transcript-partial"></div>
+  </div>
+
+  <!-- Bot transcript -->
+  <div class="card">
+    <div class="card-label">Agent</div>
+    <div id="transcript-bot">—</div>
+  </div>
+
+  <!-- Status bar -->
+  <div id="status-bar"><span id="status-text">Not connected</span></div>
+
+<script>
+/* ========================================================================
+   Voice AI Agent — Browser client
+   ========================================================================
+   Architecture:
+     1. MediaRecorder (audio/webm;codecs=opus) → ArrayBuffer → WebSocket
+        FALLBACK: AudioWorklet for raw PCM if MediaRecorder opus is rejected
+     2. Web Audio API AnalyserNode → RMS energy → VAD interrupt detection
+     3. AudioContext + queue of AudioBufferSourceNodes for seamless TTS playback
+     4. WebSocket message dispatcher (binary = audio, text = JSON control)
+
+   Audio format sent to backend:
+     PCM 16-bit signed little-endian, mono, 16kHz
+     (resampled from native browser sample rate via AudioContext resampling)
+   ======================================================================== */
+
+"use strict";
+
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+const WS_URL          = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+const SEND_INTERVAL_MS = 100;      // Send audio chunks every 100ms
+const VAD_THRESHOLD    = 0.012;    // RMS energy threshold for interrupt
+const VAD_HOLD_FRAMES  = 8;        // Consecutive frames above threshold to confirm speech
+const PLAYBACK_SAMPLE_RATE = 22050; // Must match RIVA_TTS_SAMPLE_RATE in config.py
+const PREBUFFER_MS     = 200;      // Pre-buffer TTS audio before starting playback
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+let ws             = null;
+let audioCtx       = null;
+let mediaStream    = null;
+let sourceNode     = null;
+let analyserNode   = null;
+let processorNode  = null;   // AudioWorkletNode or ScriptProcessorNode
+let sendInterval   = null;
+let pcmBuffer      = [];     // Accumulates Float32 samples between sends
+let sessionActive  = false;
+let botSpeaking    = false;
+let userSpeaking   = false;
+let vadFrameCount  = 0;
+let interruptSent  = false;
+
+// TTS playback queue
+let ttsQueue          = [];       // Buffered PCM Int16 arrays waiting to play
+let ttsBufferedMs     = 0;        // How many ms we have buffered
+let ttsPlaying        = false;    // AudioContext is currently scheduled
+let ttsScheduledUntil = 0;        // audioCtx.currentTime at which last buffer ends
+let ttsPrebufferDone  = false;
+
+// ---------------------------------------------------------------------------
+// DOM references
+// ---------------------------------------------------------------------------
+const orbEl          = document.getElementById("orb");
+const orbLabel       = document.getElementById("orb-label");
+const btnStart       = document.getElementById("btn-start");
+const statusText     = document.getElementById("status-text");
+const transcriptUser = document.getElementById("transcript-user");
+const transcriptPartial = document.getElementById("transcript-partial");
+const transcriptBot  = document.getElementById("transcript-bot");
+const energyBar      = document.getElementById("energy-bar");
+
+// ---------------------------------------------------------------------------
+// UI helpers
+// ---------------------------------------------------------------------------
+function setOrb(state, label) {
+  orbEl.className = `orb ${state}`;
+  orbLabel.textContent = label;
+}
+
+function setStatus(msg) {
+  statusText.textContent = msg;
+}
+
+// ---------------------------------------------------------------------------
+// Session toggle (Start / Stop button)
+// ---------------------------------------------------------------------------
+async function toggleSession() {
+  if (sessionActive) {
+    stopSession();
+  } else {
+    await startSession();
+  }
+}
+
+async function startSession() {
+  setStatus("Requesting microphone…");
+  btnStart.disabled = true;
+
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        sampleRate: 16000,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+  } catch (err) {
+    setStatus("Microphone access denied: " + err.message);
+    btnStart.disabled = false;
+    return;
+  }
+
+  // Create AudioContext — may be created at 16kHz if browser supports it,
+  // otherwise we resample in the worklet.
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)({
+    sampleRate: 16000,
+    latencyHint: "interactive",
+  });
+
+  await setupAudioPipeline();
+  connectWebSocket();
+
+  sessionActive = true;
+  btnStart.textContent = "Stop";
+  btnStart.classList.add("active");
+  btnStart.disabled = false;
+  setOrb("idle", "Listening");
+  setStatus("Connected — speak to start…");
+}
+
+function stopSession() {
+  sessionActive = false;
+  btnStart.textContent = "Start Talking";
+  btnStart.classList.remove("active");
+
+  // Tear down audio capture
+  if (sendInterval) { clearInterval(sendInterval); sendInterval = null; }
+  if (processorNode) { processorNode.disconnect(); processorNode = null; }
+  if (sourceNode)    { sourceNode.disconnect();    sourceNode    = null; }
+  if (analyserNode)  { analyserNode.disconnect();  analyserNode  = null; }
+  if (audioCtx)      { audioCtx.close();           audioCtx      = null; }
+  if (mediaStream)   { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
+
+  // Tear down WebSocket
+  if (ws && ws.readyState === WebSocket.OPEN) { ws.close(); }
+  ws = null;
+
+  // Reset TTS state
+  ttsQueue = []; ttsBufferedMs = 0; ttsPlaying = false;
+  ttsPrebufferDone = false; botSpeaking = false; userSpeaking = false;
+
+  setOrb("idle", "Idle");
+  setStatus("Not connected");
+}
+
+// ---------------------------------------------------------------------------
+// Audio pipeline setup
+// ---------------------------------------------------------------------------
+async function setupAudioPipeline() {
+  sourceNode   = audioCtx.createMediaStreamSource(mediaStream);
+  analyserNode = audioCtx.createAnalyser();
+  analyserNode.fftSize = 256;
+  analyserNode.smoothingTimeConstant = 0.5;
+
+  sourceNode.connect(analyserNode);
+
+  // Prefer AudioWorklet for zero-copy raw PCM; fall back to ScriptProcessor
+  if (audioCtx.audioWorklet) {
+    await setupWorklet();
+  } else {
+    setupScriptProcessor();
+  }
+
+  // VAD + chunk-send interval
+  sendInterval = setInterval(sendAudioChunk, SEND_INTERVAL_MS);
+}
+
+// -- AudioWorklet approach --------------------------------------------------
+const WORKLET_CODE = `
+class PCMCapture extends AudioWorkletProcessor {
+  process(inputs) {
+    const ch = inputs[0][0];
+    if (ch && ch.length > 0) {
+      // Transfer ownership for zero-copy
+      const copy = new Float32Array(ch);
+      this.port.postMessage(copy, [copy.buffer]);
+    }
+    return true;
+  }
+}
+registerProcessor("pcm-capture", PCMCapture);
+`;
+
+async function setupWorklet() {
+  const blob = new Blob([WORKLET_CODE], { type: "application/javascript" });
+  const url  = URL.createObjectURL(blob);
+  await audioCtx.audioWorklet.addModule(url);
+  URL.revokeObjectURL(url);
+
+  processorNode = new AudioWorkletNode(audioCtx, "pcm-capture");
+  processorNode.port.onmessage = (e) => {
+    pcmBuffer.push(...e.data);
+  };
+  analyserNode.connect(processorNode);
+  processorNode.connect(audioCtx.destination);  // required for some browsers
+}
+
+// -- ScriptProcessor fallback -----------------------------------------------
+function setupScriptProcessor() {
+  processorNode = audioCtx.createScriptProcessor(4096, 1, 1);
+  processorNode.onaudioprocess = (e) => {
+    const samples = e.inputBuffer.getChannelData(0);
+    pcmBuffer.push(...samples);
+  };
+  analyserNode.connect(processorNode);
+  processorNode.connect(audioCtx.destination);
+}
+
+// ---------------------------------------------------------------------------
+// PCM conversion helpers
+// ---------------------------------------------------------------------------
+
+/** Convert Float32 samples [-1, 1] to Int16 PCM bytes */
+function float32ToInt16PCM(float32Array) {
+  const int16 = new Int16Array(float32Array.length);
+  for (let i = 0; i < float32Array.length; i++) {
+    const s = Math.max(-1, Math.min(1, float32Array[i]));
+    int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  return int16;
+}
+
+// ---------------------------------------------------------------------------
+// Audio chunk sender (called every 100ms)
+// ---------------------------------------------------------------------------
+function sendAudioChunk() {
+  if (!ws || ws.readyState !== WebSocket.OPEN || pcmBuffer.length === 0) return;
+
+  const samples = new Float32Array(pcmBuffer);
+  pcmBuffer = [];
+
+  // VAD: compute RMS energy
+  const rms = computeRMS(samples);
+  updateEnergyMeter(rms);
+  checkVAD(rms);
+
+  // Convert and send
+  const int16 = float32ToInt16PCM(samples);
+  ws.send(int16.buffer);
+}
+
+// ---------------------------------------------------------------------------
+// VAD (Voice Activity Detection)
+// ---------------------------------------------------------------------------
+function computeRMS(float32Array) {
+  let sum = 0;
+  for (let i = 0; i < float32Array.length; i++) {
+    sum += float32Array[i] * float32Array[i];
+  }
+  return Math.sqrt(sum / float32Array.length);
+}
+
+function updateEnergyMeter(rms) {
+  const pct = Math.min(100, rms * 1000);
+  energyBar.style.width = pct + "%";
+  energyBar.classList.toggle("above-threshold", rms > VAD_THRESHOLD);
+}
+
+function checkVAD(rms) {
+  if (rms > VAD_THRESHOLD) {
+    vadFrameCount++;
+    if (vadFrameCount >= VAD_HOLD_FRAMES && !userSpeaking) {
+      userSpeaking = true;
+      setOrb("user-speaking", "You're speaking…");
+
+      // If bot is currently speaking, send interrupt signal
+      if (botSpeaking && !interruptSent) {
+        interruptSent = true;
+        sendJSON({ type: "interrupt" });
+        stopTTSPlayback();
+      }
+    }
+  } else {
+    vadFrameCount = 0;
+    if (userSpeaking) {
+      userSpeaking = false;
+      if (!botSpeaking) setOrb("idle", "Listening");
+    }
+    interruptSent = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// WebSocket
+// ---------------------------------------------------------------------------
+function connectWebSocket() {
+  setStatus("Connecting to server…");
+  ws = new WebSocket(WS_URL);
+  ws.binaryType = "arraybuffer";
+
+  ws.onopen = () => {
+    setStatus("Connected — session starting…");
+  };
+
+  ws.onclose = (e) => {
+    setStatus("Disconnected (code " + e.code + ")");
+    if (sessionActive) {
+      setOrb("idle", "Reconnecting…");
+      setTimeout(connectWebSocket, 2000);
+    }
+  };
+
+  ws.onerror = (err) => {
+    setStatus("WebSocket error");
+    console.error("WS error", err);
+  };
+
+  ws.onmessage = (event) => {
+    if (event.data instanceof ArrayBuffer) {
+      onAudioReceived(event.data);
+    } else if (typeof event.data === "string") {
+      onJSONReceived(event.data);
+    }
+  };
+}
+
+function sendJSON(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(obj));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Incoming message handlers
+// ---------------------------------------------------------------------------
+function onJSONReceived(raw) {
+  let msg;
+  try { msg = JSON.parse(raw); } catch { return; }
+
+  switch (msg.type) {
+    case "session_ready":
+      setStatus("Ready — speak to the agent");
+      break;
+
+    case "transcript_partial":
+      transcriptPartial.textContent = msg.text || "";
+      break;
+
+    case "transcript_final":
+      transcriptUser.textContent = msg.text || "—";
+      transcriptPartial.textContent = "";
+      transcriptBot.textContent = "—";   // clear previous bot text
+      setOrb("thinking", "Thinking…");
+      botSpeaking = false;
+      break;
+
+    case "bot_text_fragment":
+      if (transcriptBot.textContent === "—") transcriptBot.textContent = "";
+      transcriptBot.textContent += msg.text + " ";
+      break;
+
+    case "tts_start":
+      botSpeaking = true;
+      ttsPrebufferDone = false;
+      ttsScheduledUntil = 0;
+      setOrb("bot-speaking", "Agent speaking…");
+      break;
+
+    case "tts_end":
+    case "tts_stopped":
+      botSpeaking = false;
+      if (!userSpeaking) setOrb("idle", "Listening");
+      break;
+
+    case "error":
+      setStatus("Error: " + (msg.message || "unknown"));
+      console.error("Server error:", msg.message);
+      break;
+
+    case "pong":
+      break;
+
+    default:
+      console.debug("Unhandled message type:", msg.type);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// TTS audio playback
+// ---------------------------------------------------------------------------
+
+/**
+ * Receive a raw PCM ArrayBuffer from the server and queue it for playback.
+ * Audio format: 16-bit signed PCM, mono, 22050 Hz (matches RIVA TTS config).
+ */
+function onAudioReceived(arrayBuffer) {
+  if (!audioCtx) return;
+
+  // Parse Int16 PCM
+  const int16 = new Int16Array(arrayBuffer);
+  ttsQueue.push(int16);
+
+  const chunkDurationMs = (int16.length / PLAYBACK_SAMPLE_RATE) * 1000;
+  ttsBufferedMs += chunkDurationMs;
+
+  // Start playback once pre-buffer is filled
+  if (!ttsPrebufferDone && ttsBufferedMs >= PREBUFFER_MS) {
+    ttsPrebufferDone = true;
+    drainTTSQueue();
+  } else if (ttsPrebufferDone) {
+    drainTTSQueue();
+  }
+}
+
+/**
+ * Schedule all queued TTS chunks back-to-back on the AudioContext timeline.
+ * Uses AudioBufferSourceNode chaining to eliminate inter-chunk gaps.
+ */
+function drainTTSQueue() {
+  if (!audioCtx) return;
+
+  // Determine the start time for the next chunk
+  const now = audioCtx.currentTime;
+  if (ttsScheduledUntil < now) ttsScheduledUntil = now;
+
+  while (ttsQueue.length > 0) {
+    const int16 = ttsQueue.shift();
+    const float32 = int16ToFloat32(int16);
+
+    const buffer = audioCtx.createBuffer(1, float32.length, PLAYBACK_SAMPLE_RATE);
+    buffer.copyToChannel(float32, 0);
+
+    const source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioCtx.destination);
+    source.start(ttsScheduledUntil);
+
+    ttsScheduledUntil += buffer.duration;
+  }
+
+  ttsBufferedMs = 0;
+}
+
+/** Convert Int16 PCM to Float32 in [-1, 1] range */
+function int16ToFloat32(int16Array) {
+  const float32 = new Float32Array(int16Array.length);
+  for (let i = 0; i < int16Array.length; i++) {
+    float32[i] = int16Array[i] / (int16Array[i] < 0 ? 0x8000 : 0x7FFF);
+  }
+  return float32;
+}
+
+/** Immediately stop TTS playback by suspending and resuming the AudioContext */
+function stopTTSPlayback() {
+  ttsQueue = [];
+  ttsBufferedMs = 0;
+  ttsPrebufferDone = false;
+  ttsScheduledUntil = 0;
+
+  if (audioCtx) {
+    // Suspend briefly to flush scheduled buffers, then resume for mic capture
+    audioCtx.suspend().then(() => {
+      audioCtx.resume();
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Keepalive ping
+// ---------------------------------------------------------------------------
+setInterval(() => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    sendJSON({ type: "ping" });
+  }
+}, 25000);
+</script>
+</body>
+</html>

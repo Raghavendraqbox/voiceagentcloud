@@ -1,0 +1,58 @@
+TelecomNet Product Catalog — Customer Service Reference
+
+DATA BUNDLES
+The 400MB hourly data bundle costs $1 and is valid for 1 hour. It is the cheapest available bundle suitable for quick email checks and light browsing.
+The 1GB daily bundle costs $3 and is valid for 24 hours. This bundle covers typical daily social media and messaging use.
+The 5GB weekly bundle costs $10 and is valid for 7 days. It is designed for moderate video streaming and remote work sessions throughout the week.
+The 20GB monthly bundle costs $30 and is valid for 30 days. This provides the best per-megabyte value for heavy regular users.
+The unlimited daily bundle costs $5 and provides unlimited data for 24 hours with a fair-use policy of 10GB at full LTE speed, after which speeds are reduced to 1 Mbps until midnight reset.
+A family sharing plan allows up to 5 SIM cards to share a 50GB monthly pool for $60. Each SIM can be managed independently from the account dashboard.
+
+VOICE CALLS
+The standard local call rate is $0.10 per minute billed in 30-second increments. There is no connection fee.
+International call rates start from $0.20 per minute to neighboring countries and up to $1.50 per minute for satellite-connected territories.
+A 100-minute local call bundle costs $8 and is valid for 30 days. It cannot be used for international calls.
+Wi-Fi calling is available on compatible handsets at standard local call rates. Enable it in your phone settings under Wi-Fi Calling or Calls over Wi-Fi.
+
+SMS AND MESSAGING
+Standard SMS rate is $0.05 per message to any local number.
+The 100 SMS bundle costs $1 and is valid for 7 days.
+The 500 SMS bundle costs $3 and is valid for 30 days.
+MMS messages are billed at $0.15 each and require a data connection to be active.
+
+ROAMING
+International roaming is available in 50 countries. Activate the roaming add-on before departure via the MyTelecom app or by calling customer service at 100.
+The daily roaming data pass costs $5 and gives 500MB at local network speeds.
+Roaming voice calls are billed at $0.50 per minute outgoing and $0.25 per minute incoming.
+Roaming SMS costs $0.10 per message sent. Receiving SMS while roaming is free.
+
+ACCOUNT MANAGEMENT
+Check your balance at any time by dialing star 123 hash, using the MyTelecom app, or visiting account.telecom.example.
+Top-up is available via credit card, debit card, bank transfer, and voucher codes. The minimum top-up is $1 and the maximum single transaction is $500.
+Enable auto-renew on any bundle in the MyTelecom app to avoid service interruptions. You will receive an SMS reminder 24 hours before renewal if your balance is insufficient.
+Bundle activation takes effect immediately. A confirmation SMS is sent within 30 seconds of purchase.
+Account transfers require visiting a store with government-issued photo identification and the current account holder present or a notarized letter of authorization.
+
+BILLING AND PAYMENTS
+Monthly billing statements are available in the MyTelecom app and by email. Paper statements can be requested for $1 per statement.
+Payment is due within 15 days of the bill date. A $2 late fee applies after 15 days. Service may be suspended after 30 days of non-payment.
+Disputed charges must be reported within 60 days of the bill date by calling 100 or submitting a ticket at support.telecom.example.
+Direct debit can be set up from the billing section of the app to avoid missed payments.
+
+DEVICE AND TECHNICAL SUPPORT
+APN settings for Android devices: Name is TelecomNet, APN is internet.telecom, leave username and password blank, MCC is 310, MNC is 260.
+APN settings for iPhone: navigate to Settings, then Cellular, then Cellular Data Network, and enter internet.telecom in the APN field.
+If you experience no data connectivity, try toggling airplane mode off and on, or restart the device. If the problem persists, dial star 100 hash to reset network settings remotely.
+Network coverage maps are available at coverage.telecom.example. Enter your address or postcode to check indoor and outdoor coverage strength.
+
+SUPPORT CHANNELS
+Customer service is available 24 hours a day, 7 days a week. Call 100 from your TelecomNet number (free of charge) or plus 1 800 555 0100 from any phone.
+Live chat is available in the MyTelecom app and at support.telecom.example during business hours 8am to 10pm local time.
+Email support responds within 4 business hours at support@telecom.example.
+Network outage information is posted in real time at status.telecom.example and on the official Twitter account at TelecomStatus.
+
+SIM CARD SERVICES
+SIM card replacement for lost, stolen, or damaged SIMs requires visiting a TelecomNet store with valid government-issued photo identification. The replacement fee is $2.
+eSIM activation is available for compatible devices through the MyTelecom app. The process takes approximately 10 minutes.
+SIM port-in from another carrier allows you to keep your existing number. Submit the port-in request online or in-store. The porting process completes within 24 hours after submission and requires your current carrier account number and PIN.
+SIM swaps to a different device do not require a store visit if both devices support eSIM.

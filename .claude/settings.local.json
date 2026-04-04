@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(pip install:*)",
+      "Bash(curl -s http://localhost:11434/api/tags)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(ollama list:*)",
+      "Bash(python -c \"from main import app; print\\('Import OK'\\)\")",
+      "Bash(uvicorn main:app --host 0.0.0.0 --port 8000)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/static/index.html)",
+      "Bash(git branch:*)",
+      "Bash(git add:*)",
+      "Bash(git remote:*)",
+      "Bash(git push:*)",
+      "Bash(git config:*)",
+      "Bash(git:*)",
+      "Bash(env:*)",
+      "Bash(.venv/bin/pip install:*)",
+      "Bash(wait)",
+      "Bash(/workspace/voiceagentcloud/.venv/bin/pip list:*)",
+      "Bash(/workspace/voiceagentcloud/.venv/bin/pip install:*)",
+      "Bash(/workspace/voiceagentcloud/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1 --log-level info)",
+      "Bash(echo \"Server PID: $!\")",
+      "Bash(netstat -tlnp)",
+      "Bash(curl -v http://localhost:8000/health)",
+      "Bash(/workspace/voiceagentcloud/.venv/bin/python -c \"import faster_whisper\")",
+      "Bash(/workspace/voiceagentcloud/.venv/bin/python -c \"import edge_tts\")",
+      "Bash(apt-get install:*)",
+      "Bash(pkill -f \"uvicorn main:app\")",
+      "Bash(kill 1284)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(kill 2234)",
+      "Bash(kill 2888)",
+      "Bash(/workspace/voiceagentcloud/.venv/bin/python:*)",
+      "Bash(kill 3304)",
+      "Bash(/workspace/voiceagentcloud/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1)"
+    ]
+  }
+}

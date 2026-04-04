@@ -257,8 +257,8 @@
 <body>
 
   <header>
-    <h1>Wesaal</h1>
-    <p>Etisalat Afghanistan — Virtual Customer Service Agent</p>
+    <h1>Qobox Assistant</h1>
+    <p>Quality Outside The Box — Virtual Customer Service Agent</p>
   </header>
 
   <!-- Status orb -->
@@ -315,10 +315,10 @@
 // ---------------------------------------------------------------------------
 const WS_URL          = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
 const SEND_INTERVAL_MS = 100;      // Send audio chunks every 100ms
-const VAD_THRESHOLD    = 0.012;    // RMS energy threshold for interrupt
-const VAD_HOLD_FRAMES  = 8;        // Consecutive frames above threshold to confirm speech
-const PLAYBACK_SAMPLE_RATE = 24000; // edge-tts native rate — no server-side resampling
-const PREBUFFER_MS     = 300;      // Pre-buffer TTS audio before starting playback
+const VAD_THRESHOLD    = 0.018;    // RMS threshold — high enough to ignore background noise
+const VAD_HOLD_FRAMES  = 4;        // 4 × 100ms = 400ms sustained speech to confirm interrupt
+const PLAYBACK_SAMPLE_RATE = 22050; // Riva TTS native rate (22050 Hz)
+const PREBUFFER_MS     = 250;      // Buffer 250ms before playback starts
 
 // ---------------------------------------------------------------------------
 // State
@@ -407,7 +407,8 @@ async function startSession() {
     latencyHint: "interactive",
   });
 
-  // Separate TTS playback context — exactly 22050 Hz so PCM plays without resampling
+  // Separate TTS playback context — exactly 24000 Hz so edge-tts PCM plays
+  // without browser resampling (edge-tts native rate = 24 kHz).
   ttsAudioCtx = new (window.AudioContext || window.webkitAudioContext)({
     sampleRate: PLAYBACK_SAMPLE_RATE,
     latencyHint: "playback",
@@ -570,16 +571,20 @@ function updateEnergyMeter(rms) {
 function checkVAD(rms) {
   if (rms > VAD_THRESHOLD) {
     vadFrameCount++;
+
+    // Interrupt fires on the VERY FIRST frame above threshold when bot is speaking
+    // — no hold delay, because every ms of bot audio heard over user speech is bad UX.
+    if (botSpeaking && !interruptSent) {
+      interruptSent = true;
+      sendJSON({ type: "interrupt" });
+      stopTTSPlayback();
+      setOrb("user-speaking", "You're speaking…");
+      userSpeaking = true;
+    }
+
     if (vadFrameCount >= VAD_HOLD_FRAMES && !userSpeaking) {
       userSpeaking = true;
       setOrb("user-speaking", "You're speaking…");
-
-      // If bot is currently speaking, send interrupt signal
-      if (botSpeaking && !interruptSent) {
-        interruptSent = true;
-        sendJSON({ type: "interrupt" });
-        stopTTSPlayback();
-      }
     }
   } else {
     vadFrameCount = 0;
@@ -661,9 +666,12 @@ function onJSONReceived(raw) {
       break;
 
     case "tts_start":
+      // Flush any stale audio from a previous/interrupted turn before starting fresh
+      stopTTSPlayback();
       botSpeaking = true;
       ttsPrebufferDone = false;
       ttsScheduledUntil = 0;
+      ttsBufferedMs = 0;
       // Resume in case browser auto-suspended the context between turns
       if (ttsAudioCtx && ttsAudioCtx.state !== "running") ttsAudioCtx.resume();
       setOrb("bot-speaking", "Agent speaking…");
@@ -697,7 +705,8 @@ function onJSONReceived(raw) {
  * Audio format: 16-bit signed PCM, mono, 22050 Hz (matches RIVA TTS config).
  */
 function onAudioReceived(arrayBuffer) {
-  if (!ttsAudioCtx) return;
+  // Drop audio chunks that arrive after the bot was stopped/interrupted
+  if (!ttsAudioCtx || !botSpeaking) return;
 
   // Parse Int16 PCM
   const int16 = new Int16Array(arrayBuffer);
@@ -718,13 +727,23 @@ function onAudioReceived(arrayBuffer) {
 /**
  * Schedule all queued TTS chunks back-to-back on the AudioContext timeline.
  * Uses AudioBufferSourceNode chaining to eliminate inter-chunk gaps.
+ *
+ * Duration is tracked in integer sample counts (not floating-point seconds)
+ * to avoid floating-point accumulation drift that causes audible micro-gaps
+ * between consecutive chunks.
  */
 function drainTTSQueue() {
   if (!ttsAudioCtx) return;
 
-  // Determine the start time for the next chunk
   const now = ttsAudioCtx.currentTime;
-  if (ttsScheduledUntil < now) ttsScheduledUntil = now;
+
+  // If the scheduled playhead has fallen behind real time (e.g. first chunk
+  // or after a stop), snap it forward to now plus a small scheduling look-ahead
+  // so the AudioContext has time to render the buffer before it is needed.
+  const SCHEDULE_AHEAD_S = 0.005;  // 5 ms look-ahead
+  if (ttsScheduledUntil < now + SCHEDULE_AHEAD_S) {
+    ttsScheduledUntil = now + SCHEDULE_AHEAD_S;
+  }
 
   while (ttsQueue.length > 0) {
     const int16 = ttsQueue.shift();
@@ -742,17 +761,23 @@ function drainTTSQueue() {
       ttsSourceNodes = ttsSourceNodes.filter(n => n !== source);
     });
 
-    ttsScheduledUntil += buffer.duration;
+    // Advance by exact integer sample count converted to seconds to prevent
+    // floating-point drift accumulation across many chunks.
+    ttsScheduledUntil += float32.length / PLAYBACK_SAMPLE_RATE;
   }
 
   ttsBufferedMs = 0;
 }
 
-/** Convert Int16 PCM to Float32 in [-1, 1] range */
+/** Convert Int16 PCM to Float32 in [-1, 1] range.
+ *  Always divide by 32768 (not 32767 for positive) so both halves of the
+ *  waveform are scaled identically — asymmetric divisors cause harmonic
+ *  distortion audible as a low-level noise floor on voiced speech.
+ */
 function int16ToFloat32(int16Array) {
   const float32 = new Float32Array(int16Array.length);
   for (let i = 0; i < int16Array.length; i++) {
-    float32[i] = int16Array[i] / (int16Array[i] < 0 ? 0x8000 : 0x7FFF);
+    float32[i] = int16Array[i] / 32768.0;
   }
   return float32;
 }

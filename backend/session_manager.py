@@ -21,7 +21,7 @@ from config import config
 from memory import ConversationMemory
 from rag import RAGRetriever
 from asr import RivaASRHandler, TranscriptResult
-from tts import RivaTTSHandler, TTSOrchestrator
+from tts import RivaTTSHandler, TTSOrchestrator, schedule_kokoro_warmup
 from llm import OllamaClient
 
 logger = logging.getLogger(__name__)
@@ -67,8 +67,9 @@ class Session:
     llm_client: Optional[OllamaClient] = field(default=None, init=False)
 
     def cancel_tts(self) -> None:
-        """Signal TTS to stop and clear the interrupt event for next turn."""
+        """Signal TTS to stop immediately."""
         self.tts_cancel_event.set()
+        self.interrupt_event.set()   # also wake up the LLM/TTS loop immediately
         logger.info(
             "TTS cancel signalled",
             extra={"session_id": self.session_id},
@@ -132,6 +133,9 @@ class SessionManager:
         self._retriever = RAGRetriever()
         self._retriever.initialize()
         logger.info("RAG retriever initialized")
+        # Warmup Kokoro AFTER all heavy imports (sentence_transformers/transformers)
+        # are fully loaded so there is no import-order race condition.
+        schedule_kokoro_warmup()
 
     def create_session(
         self,
@@ -254,25 +258,22 @@ class SessionManager:
         send_json_cb: JsonSendCallback,
     ) -> None:
         """
-        Full conversation loop with greeting and language-selection phases.
+        Full conversation loop.
 
-        Phase 0 — Greeting: play welcome message + ask for language preference.
-        Phase 1 — Language: accept user's first response, confirm English.
+        Phase 0 — Greeting: play welcome message after the user speaks for the
+                  first time (deferred greeting avoids TTS overlap on connect).
+        Phase 1 — Language: confirm English after user states preference.
         Phase 2+ — Conversation: LLM handles all subsequent turns.
+
+        The greeting is intentionally deferred until the first user utterance
+        so that TTS output is strictly sequential: no audio can overlap because
+        the greeting only plays once the pipeline is idle and the user has
+        already triggered their first speech event.
         """
         logger.info(
             "LLM/TTS loop started",
             extra={"session_id": session.session_id},
         )
-
-        # ------------------------------------------------------------------
-        # Phase 0: Greeting — no user input needed
-        # ------------------------------------------------------------------
-        greeting = (
-            "Welcome to Etisalat Afghanistan. I am Wesaal, your virtual assistant. "
-            "Please tell me your preferred language: English, Dari, or Pashto."
-        )
-        await self._play_hardcoded(session, send_json_cb, greeting)
 
         while True:
             # ----------------------------------------------------------
@@ -296,7 +297,8 @@ class SessionManager:
                 extra={"session_id": session.session_id},
             )
 
-            # Stop any ongoing TTS, reset events
+            # Stop any ongoing TTS, reset events.
+            # cancel_tts() is safe to call even when nothing is playing.
             session.cancel_tts()
             await asyncio.sleep(0.05)
             session.reset_for_new_turn()
@@ -305,16 +307,23 @@ class SessionManager:
             await send_json_cb({"type": "transcript_final", "text": user_text})
 
             # ----------------------------------------------------------
-            # Phase 1: Language selection (first user turn)
+            # Phase 0: Greeting — first thing we say (deferred to here so
+            #          it never overlaps with any other TTS output).
             # ----------------------------------------------------------
             if not session.language_selected:
+                # We treat the user's first utterance as their language choice.
+                # Respond with greeting + English confirmation in a single TTS
+                # call so there is only one audio stream for this phase.
                 session.language_selected = True
-                lang_confirm = "I'll assist you in English today. How can I help you?"
-                await self._play_hardcoded(session, send_json_cb, lang_confirm)
+                greeting_and_confirm = (
+                    "Welcome to Qobox. I am your virtual assistant. "
+                    "I'll assist you in English today. How can I help you?"
+                )
+                await self._play_hardcoded(session, send_json_cb, greeting_and_confirm)
                 continue
 
             # ----------------------------------------------------------
-            # Phase 2+: Normal LLM turn
+            # Phase 1+: Normal LLM turn
             # ----------------------------------------------------------
             await send_json_cb({"type": "tts_start"})
 

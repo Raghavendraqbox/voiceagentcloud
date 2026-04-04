@@ -4,6 +4,95 @@
 
 ---
 
+## [1.5.0] - 2026-04-04
+
+### Changed — Qobox rebrand & cloud GPU stack
+
+- **Agent identity changed to Qobox Assistant.**
+  System prompt rewritten: agent represents *Qobox (Quality Outside The Box)*,
+  an Indian software QA company.  Greeting is now *"Welcome to Qobox. I am
+  your virtual assistant."*  Out-of-scope queries (anything unrelated to
+  software testing / QA) are rejected with *"I'm sorry, I can only assist
+  you with issues related to Qobox."*
+
+- **Name memory via conversation history.**
+  System prompt explicitly instructs the model to read the conversation
+  history and use the user's name when they have already given it.
+
+- **NVIDIA Riva via NVCF cloud gRPC (no Docker required).**
+  When `NVIDIA_API_KEY` is set the server authenticates to
+  `grpc.nvcf.nvidia.com:443` using the Riva Python SDK with
+  `function-id` + `authorization` gRPC metadata headers.
+  NVCF function IDs configured in `config.py`:
+  - ASR: Parakeet-CTC-1.1B  (`1598d209-5e27-4d3c-8079-4751568b1081`)
+  - TTS: FastPitch-HiFiGAN   (`bc45d9e9-7c78-4d56-9737-e27011962ba8`)
+
+- **Kokoro GPU TTS as primary fallback (replaces edge-tts as first fallback).**
+  `tts.py` completely rewritten.  A module-level `_kokoro_pipeline` singleton
+  is initialised once on first TTS call (thread-safe via `threading.Lock`).
+  Synthesis streams chunk-by-chunk — first audio reaches the browser in ~50 ms.
+  `cancel_event` is checked inside the generation thread and in the async
+  dispatch loop for < 200 ms interrupt latency.  A background `schedule_kokoro_warmup()`
+  thread pre-compiles GPU kernels after app startup.
+  Fallback chain: **Riva → Kokoro → edge-tts → silence**.
+
+- **Whisper `small` GPU (float16 CUDA) as ASR fallback.**
+  When Riva is unavailable the stub session now loads `whisper-small` on CUDA
+  instead of `whisper-tiny` on CPU, significantly improving transcription
+  accuracy.
+
+- **NVIDIA NIM (Nemotron-70B) as second LLM fallback.**
+  `llm.py` fallback chain is now: **Ollama → NIM (if `NVIDIA_API_KEY`) → Claude API → neutral stub**.
+  NIM uses `nvidia/llama-3.1-nemotron-70b-instruct` via `integrate.api.nvidia.com`.
+
+- **RAG knowledge base updated for Qobox.**
+  Seven seed documents added to `rag.py`: company identity, services catalogue,
+  target industries, mission statement, tech stack, culture, and future focus.
+  `RAG_SIMILARITY_THRESHOLD` lowered 0.5 → 0.3 for better recall on Qobox
+  queries.
+
+- **VAD tuning — background-noise immunity.**
+  Raised `VAD_THRESHOLD` (0.010 → 0.018) and `VAD_HOLD_FRAMES` (2 → 4) in
+  the frontend to prevent ambient noise from firing a premature interrupt
+  while the bot is speaking.  `PREBUFFER_MS` raised 150 → 250 ms so the
+  browser audio buffer is full before the VAD can fire.
+
+- **ASR streaming fixed — no longer blocks forever.**
+  `_run_riva_session()` used `list()` to materialise all Riva responses before
+  processing — blocking the event loop indefinitely.  Changed to
+  `_run_riva_streaming()` (thread + queue) so transcripts arrive while audio
+  is still being sent.
+
+- **`.env.example` added** — documents every supported environment variable
+  with defaults and descriptions so new contributors can set up the project
+  from a clone without reading the source.
+
+- **`PLAYBACK_SAMPLE_RATE` set to 22050 Hz** in the frontend to match the
+  Riva TTS native output rate (Kokoro outputs 24000 Hz but is also accepted
+  at 22050 via the same WebSocket binary path).
+
+### Files changed
+
+- `backend/config.py` — Qobox system prompt; NVCF URIs & function IDs;
+  `RAG_SIMILARITY_THRESHOLD` 0.5 → 0.3; default `OLLAMA_MODEL` → `llama3.2:1b`
+- `backend/asr.py` — NVCF auth; `_run_riva_streaming()` replaces blocking path;
+  Whisper small/cuda/float16
+- `backend/tts.py` — full rewrite: Kokoro singleton, NVCF auth, chunk streaming,
+  cancel-aware generation thread, warmup scheduler
+- `backend/llm.py` — `_nim_http` client; `_stream_fragments_nim()`;
+  Ollama → NIM → Claude → stub fallback chain
+- `backend/rag.py` — Qobox seed documents; threshold 0.5 → 0.3
+- `backend/session_manager.py` — Qobox greeting; `cancel_tts()` sets
+  `interrupt_event`; calls `schedule_kokoro_warmup()` after `initialize_rag()`
+- `frontend/index.html` — title/header → Qobox; `PLAYBACK_SAMPLE_RATE` 24000
+  → 22050; `VAD_THRESHOLD` 0.010 → 0.018; `VAD_HOLD_FRAMES` 2 → 4;
+  `PREBUFFER_MS` 150 → 250; `tts_start` flushes stale audio buffer;
+  `int16ToFloat32` uses symmetric `/ 32768.0`
+- `.env.example` — new file
+- `CHANGELOG.md` — this entry
+
+---
+
 ## [1.4.0] - 2026-04-03
 
 ### Added

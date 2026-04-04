@@ -49,6 +49,10 @@ class OllamaClient:
             base_url=config.ollama.base_url,
             timeout=httpx.Timeout(30.0, connect=5.0),
         )
+        self._nim_http = httpx.AsyncClient(
+            base_url="https://integrate.api.nvidia.com",
+            timeout=httpx.Timeout(30.0, connect=5.0),
+        )
 
     # ------------------------------------------------------------------
     # Public API
@@ -88,6 +92,7 @@ class OllamaClient:
     async def close(self) -> None:
         """Cleanly close the underlying HTTP client."""
         await self._http.aclose()
+        await self._nim_http.aclose()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -204,12 +209,17 @@ class OllamaClient:
 
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             logger.warning(
-                "Ollama not reachable (%s) — falling back to Claude API",
+                "Ollama not reachable (%s) — falling back to NVIDIA NIM / Claude",
                 exc,
                 extra={"session_id": session_id},
             )
-            async for fragment in self._stream_fragments_claude(claude_message, session_id):
-                yield fragment
+            import os
+            if os.getenv("NVIDIA_API_KEY"):
+                async for fragment in self._stream_fragments_nim(claude_message, session_id):
+                    yield fragment
+            else:
+                async for fragment in self._stream_fragments_claude(claude_message, session_id):
+                    yield fragment
             return
 
         logger.info(
@@ -220,6 +230,58 @@ class OllamaClient:
                 "preview": full_response[:80],
             },
         )
+
+    async def _stream_fragments_nim(
+        self, user_message: str, session_id: str
+    ) -> AsyncIterator[str]:
+        """Stream from NVIDIA NIM (Nemotron-70B) — fast, high-quality fallback."""
+        import os, json as _json
+        api_key = os.getenv("NVIDIA_API_KEY", "")
+        payload = {
+            "model": "nvidia/llama-3.1-nemotron-70b-instruct",
+            "messages": [
+                {"role": "system", "content": config.system_prompt},
+                {"role": "user",   "content": user_message},
+            ],
+            "max_tokens": config.ollama.max_tokens,
+            "temperature": config.ollama.temperature,
+            "stream": True,
+        }
+        buffer = ""
+        full_response = ""
+        try:
+            async with self._nim_http.stream(
+                "POST", "/v1/chat/completions",
+                json=payload,
+                headers={"Authorization": f"Bearer {api_key}"},
+            ) as response:
+                response.raise_for_status()
+                async for raw_line in response.aiter_lines():
+                    if not raw_line or raw_line == "data: [DONE]":
+                        continue
+                    if raw_line.startswith("data: "):
+                        raw_line = raw_line[6:]
+                    try:
+                        data = _json.loads(raw_line)
+                    except _json.JSONDecodeError:
+                        continue
+                    token = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                    if not token:
+                        continue
+                    buffer += token
+                    full_response += token
+                    fragment, buffer = self._split_fragment(buffer)
+                    if fragment:
+                        yield fragment
+            if buffer.strip():
+                yield buffer.strip()
+            logger.info("NIM response complete", extra={"session_id": session_id,
+                        "preview": full_response[:80]})
+        except Exception as exc:
+            logger.error("NIM error (%s) — falling back to Claude", exc,
+                         extra={"session_id": session_id})
+            async for fragment in self._stream_fragments_claude(user_message, session_id):
+                yield fragment
 
     async def _stream_fragments_claude(
         self, user_message: str, session_id: str

@@ -93,20 +93,26 @@ class RivaASRHandler:
         self._stopped = False
 
         if _RIVA_AVAILABLE:
-            channel_creds = (
-                grpc.ssl_channel_credentials(
-                    open(config.riva.ssl_cert, "rb").read()
-                    if config.riva.ssl_cert
-                    else None
+            api_key = config.riva.nvidia_api_key
+            if api_key:
+                # Use NVIDIA Cloud (NVCF) — no local Riva server needed
+                logger.info("ASR: connecting to NVIDIA Riva via NVCF cloud",
+                            extra={"session_id": session_id})
+                auth = riva.client.Auth(
+                    uri=config.riva.nvcf_uri,
+                    use_ssl=True,
+                    metadata_args=[
+                        ("function-id", config.riva.nvcf_asr_function_id),
+                        ("authorization", f"Bearer {api_key}"),
+                    ],
                 )
-                if config.riva.use_ssl
-                else None
-            )
-            auth = riva.client.Auth(
-                uri=config.riva.server_url,
-                use_ssl=config.riva.use_ssl,
-                ssl_cert=config.riva.ssl_cert if config.riva.ssl_cert else None,
-            )
+            else:
+                # Use local Riva server
+                auth = riva.client.Auth(
+                    uri=config.riva.server_url,
+                    use_ssl=config.riva.use_ssl,
+                    ssl_cert=config.riva.ssl_cert if config.riva.ssl_cert else None,
+                )
             self._service = riva.client.ASRService(auth)
         else:
             self._service = None
@@ -142,7 +148,7 @@ class RivaASRHandler:
         while not self._stopped:
             try:
                 if _RIVA_AVAILABLE and self._service is not None:
-                    await self._run_riva_session()
+                    await self._run_riva_streaming()
                 else:
                     await self._run_stub_session()
                 backoff = 1.0  # reset on clean exit
@@ -382,9 +388,17 @@ class RivaASRHandler:
             extra={"session_id": self.session_id},
         )
         loop = asyncio.get_running_loop()
+        import torch as _torch
+        if _torch.cuda.is_available():
+            _device, _compute = "cuda", "float16"
+            logger.info("Whisper will run on GPU (CUDA)", extra={"session_id": self.session_id})
+        else:
+            _device, _compute = "cpu", "int8"
+            logger.info("Whisper will run on CPU", extra={"session_id": self.session_id})
+
         model: WhisperModel = await loop.run_in_executor(
             None,
-            lambda: WhisperModel("tiny", device="cpu", compute_type="int8"),
+            lambda: WhisperModel("small", device=_device, compute_type=_compute),
         )
         logger.info(
             "Whisper ASR ready — listening for real speech",

@@ -10,7 +10,14 @@ from dataclasses import dataclass, field
 
 @dataclass
 class RivaConfig:
-    """NVIDIA Riva gRPC service configuration."""
+    """NVIDIA Riva gRPC service configuration — local or NVCF cloud."""
+
+    # NVCF cloud gRPC gateway (used when NVIDIA_API_KEY is set)
+    nvcf_uri: str = "grpc.nvcf.nvidia.com:443"
+    nvcf_asr_function_id: str = "1598d209-5e27-4d3c-8079-4751568b1081"   # Parakeet-CTC-1.1B
+    nvcf_tts_function_id: str = "bc45d9e9-7c78-4d56-9737-e27011962ba8"   # FastPitch-HiFiGAN
+
+    # Local Riva server (used when NVIDIA_API_KEY is not set)
     server_url: str = os.getenv("RIVA_SERVER_URL", "localhost:50051")
     use_ssl: bool = os.getenv("RIVA_USE_SSL", "false").lower() == "true"
     ssl_cert: str = os.getenv("RIVA_SSL_CERT", "")
@@ -18,7 +25,7 @@ class RivaConfig:
     # ASR settings
     asr_language_code: str = os.getenv("RIVA_ASR_LANGUAGE", "en-US")
     asr_sample_rate_hz: int = int(os.getenv("RIVA_ASR_SAMPLE_RATE", "16000"))
-    asr_encoding: str = "LINEAR_PCM"  # PCM 16-bit signed little-endian
+    asr_encoding: str = "LINEAR_PCM"
     asr_max_alternatives: int = 1
     asr_interim_results: bool = True
     asr_profanity_filter: bool = False
@@ -31,12 +38,16 @@ class RivaConfig:
     tts_sample_rate_hz: int = int(os.getenv("RIVA_TTS_SAMPLE_RATE", "22050"))
     tts_encoding: str = "LINEAR_PCM"
 
+    @property
+    def nvidia_api_key(self) -> str:
+        return os.getenv("NVIDIA_API_KEY", "")
+
 
 @dataclass
 class OllamaConfig:
     """Ollama LLM service configuration."""
     base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    model: str = os.getenv("OLLAMA_MODEL", "llama3")
+    model: str = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
     temperature: float = float(os.getenv("OLLAMA_TEMPERATURE", "0.7"))
     top_p: float = float(os.getenv("OLLAMA_TOP_P", "0.9"))
     max_tokens: int = int(os.getenv("OLLAMA_MAX_TOKENS", "150"))
@@ -53,7 +64,7 @@ class RAGConfig:
     docs_directory: str = os.getenv("RAG_DOCS_DIR", "./docs")
     index_path: str = os.getenv("RAG_INDEX_PATH", "./faiss_index")
     top_k: int = int(os.getenv("RAG_TOP_K", "3"))
-    similarity_threshold: float = float(os.getenv("RAG_SIMILARITY_THRESHOLD", "0.5"))
+    similarity_threshold: float = float(os.getenv("RAG_SIMILARITY_THRESHOLD", "0.3"))
     chunk_size: int = int(os.getenv("RAG_CHUNK_SIZE", "300"))
     chunk_overlap: int = int(os.getenv("RAG_CHUNK_OVERLAP", "50"))
 
@@ -102,15 +113,20 @@ class AppConfig:
 
     # System persona injected into every LLM prompt
     system_prompt: str = (
-        "You are Wesaal, a friendly and professional customer service voice agent for Etisalat Afghanistan. "
+        "You are a friendly and professional customer service voice agent for Qobox "
+        "(Quality Outside The Box), an Indian software quality assurance and testing company. "
         "You are on a live phone call. Speak naturally and conversationally in English only. "
         "Keep every response to 1-2 short sentences maximum — this is a voice call, not a chat. "
         "Use warm, natural phrases like 'Sure thing', 'Got it', 'Let me check that for you', 'Of course'. "
-        "Only answer what the customer actually asked. Do NOT volunteer product details, prices, or "
-        "bundle names unless the customer specifically asks about them. "
+        "IMPORTANT: Read the conversation history carefully. If the user told you their name, use it. "
+        "If the user asks 'what is my name', look at the conversation history and tell them their name. "
+        "Only answer questions related to Qobox services (software testing, automation, performance testing, "
+        "security testing, API testing, QA consulting) or the company itself. "
+        "If the user asks about anything NOT related to Qobox or software quality assurance, "
+        "say exactly: 'I'm sorry, I can only assist you with issues related to Qobox.' "
         "Never use bullet points, markdown, asterisks, lists, or emojis. "
-        "Never make up prices, plan names, or account details. "
-        "If you do not know something, say 'Let me connect you to a specialist for that'."
+        "Never make up details not in your knowledge base. "
+        "If you do not know something about Qobox, say 'Let me connect you to a specialist for that'."
     )
 
     # Claude model used when Ollama is unavailable

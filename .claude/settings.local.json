@@ -36,7 +36,32 @@
       "Bash(kill 2888)",
       "Bash(/workspace/voiceagentcloud/.venv/bin/python:*)",
       "Bash(kill 3304)",
-      "Bash(/workspace/voiceagentcloud/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1)"
+      "Bash(/workspace/voiceagentcloud/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1)",
+      "Bash(echo \"Started PID: $!\")",
+      "Bash(ollama serve:*)",
+      "Bash(echo \"Ollama PID: $!\")",
+      "Bash(curl -fsSL https://ollama.com/install.sh)",
+      "Bash(sh)",
+      "Bash(apt-get update:*)",
+      "Bash(ollama pull:*)",
+      "Bash(echo \"Backend PID: $!\")",
+      "Bash(rm -rf /workspace/voiceagentcloud/backend/faiss_index/)",
+      "Bash(nvidia-smi)",
+      "Bash(nvcc --version)",
+      "Bash(docker --version)",
+      "Bash(docker info:*)",
+      "Bash(dockerd)",
+      "Bash(/workspace/voiceagentcloud/.venv/bin/pip show:*)",
+      "Bash(find /workspace/voiceagentcloud/.venv -name \"*.pyc\" -path \"*/transformers/*\" -delete)",
+      "Bash(find /workspace/voiceagentcloud/.venv -name \"__pycache__\" -path \"*/transformers/*\" -exec rm -rf {} +)",
+      "Bash(grep -E \"Server Version|Storage Driver|Runtimes\" echo \"---\")",
+      "Bash(docker run:*)",
+      "Bash(podman run:*)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer $NVIDIA_API_KEY' https://api.nvcf.nvidia.com/v2/nvcf/functions)",
+      "Bash(NVIDIA_API_KEY=\"$NVIDIA_API_KEY\" /workspace/voiceagentcloud/.venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1 --log-level info)",
+      "Bash(fuser 8000/tcp)",
+      "Bash(kill 13692)",
+      "Bash(echo \"New PID: $!\")"
     ]
   }
 }

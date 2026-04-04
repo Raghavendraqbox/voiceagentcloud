@@ -108,6 +108,50 @@ TELECOM_SEED_DOCS: List[str] = [
 
     "Late payment fee is $2 applied after 15 days past the due date. "
     "Service may be suspended after 30 days of non-payment.",
+
+    # Qobox company information
+    "Company Name: Quality Outside The Box (Qobox). "
+    "Qobox is an Indian software quality assurance and testing services company "
+    "that focuses on delivering reliable, scalable, and high-performance software systems. "
+    "The company specializes in software testing, automation frameworks, performance engineering, "
+    "and quality consulting services for enterprise applications.",
+
+    "Qobox was established in 2020 and operates as a private limited company registered in India. "
+    "The company is headquartered in Chennai, Tamil Nadu, India. "
+    "The company has two directors: Gangapuram Jayanthi and Amalodbhavi Mrudula Ranjan Damavarapu.",
+
+    "Qobox operates in the Information Technology services industry, "
+    "particularly in the software testing and quality assurance domain. "
+    "Qobox provides services to multiple industries including Healthcare, Insurance, Retail, "
+    "Financial services, Telecommunications, and Pharmaceutical companies.",
+
+    "Qobox core services include: Software Testing — manual testing for web, mobile, and enterprise applications. "
+    "Automation Testing — developing automated test frameworks to accelerate testing cycles. "
+    "Performance Testing — testing software under heavy load conditions to ensure system stability. "
+    "Security Testing — identifying vulnerabilities and protecting applications from security threats. "
+    "API Testing — validating backend APIs for reliability and performance. "
+    "QA Consulting — helping organizations implement effective testing strategies and quality frameworks.",
+
+    "Qobox works with modern testing technologies and tools such as test automation frameworks, "
+    "Continuous Integration and Continuous Deployment CI/CD pipelines, performance testing tools, "
+    "security testing tools, and enterprise testing platforms.",
+
+    "The mission of Qobox is to improve the reliability and quality of software systems by implementing "
+    "modern testing methodologies, automation solutions, and performance engineering practices. "
+    "The company aims to help organizations deliver high-quality software faster while reducing production issues "
+    "and improving user experience.",
+
+    "Qobox follows a quality-driven approach that integrates testing throughout the software development lifecycle. "
+    "Their approach includes early defect detection, automated testing strategies, and continuous monitoring "
+    "of application performance. "
+    "Qobox promotes a culture focused on technical excellence, innovation, and continuous improvement. "
+    "The company encourages its teams to adopt new testing technologies and methodologies.",
+
+    "Since its founding, Qobox has expanded its service offerings and continues to support organizations "
+    "in improving their software development and release processes through professional quality assurance services. "
+    "The company employs professionals specializing in software testing, automation engineering, and quality consulting. "
+    "The company aims to expand its capabilities in test automation, AI-assisted testing, "
+    "and DevOps-driven quality engineering solutions.",
 ]
 
 

@@ -4,6 +4,36 @@
 
 ---
 
+## [1.6.0] - 2026-04-04
+
+### Fixed
+
+- **Conversation memory broken — agent ignored user's name.**
+  `llama3.2:1b` (1 B params) consistently hallucinated the user's name and
+  ignored the conversation history injected into the prompt.  Upgraded default
+  Ollama model to `llama3.1:8b` which reliably reads prior turns and recalls
+  facts (e.g. "Your name is Sunny") across a full session.
+
+- **`requirements.txt` out of date — missing runtime dependencies.**
+  Several packages used at runtime (`kokoro`, `faster-whisper`, `edge-tts`,
+  `av`, `anthropic`, `misaki`) were not listed.  A fresh clone would fail at
+  first use.  All runtime packages now pinned with tested versions.
+  `transformers>=4.40,<5.0` constraint added (Kokoro breaks on transformers 5).
+
+- **README startup guide incomplete.**
+  Steps now cover every prerequisite (PyTorch+CUDA, Ollama, API keys,
+  python-dotenv loading, HTTPS for remote access) so a fresh clone runs
+  end-to-end without referring to any other document.
+
+### Changed
+
+- `backend/config.py` — default `OLLAMA_MODEL`: `llama3.2:1b` → `llama3.1:8b`
+- `requirements.txt` — full rewrite with all runtime deps and version pins
+- `README.md` — complete step-by-step run guide (see below)
+- `.env.example` — `OLLAMA_MODEL` default updated to match
+
+---
+
 ## [1.5.0] - 2026-04-04
 
 ### Changed — Qobox rebrand & cloud GPU stack

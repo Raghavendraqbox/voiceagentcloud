@@ -61,7 +61,10 @@
       "Bash(NVIDIA_API_KEY=\"$NVIDIA_API_KEY\" /workspace/voiceagentcloud/.venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1 --log-level info)",
       "Bash(fuser 8000/tcp)",
       "Bash(kill 13692)",
-      "Bash(echo \"New PID: $!\")"
+      "Bash(echo \"New PID: $!\")",
+      "Bash(echo \"Pulling llama3.1:8b in background PID $!\")",
+      "Bash(kill 14283 14281 15187)",
+      "Bash(curl -s -X POST http://localhost:11434/api/generate -d '{\"model\":\"llama3.1:8b\",\"prompt\":\"You are a helpful assistant.\\\\n\\\\nConversation so far:\\\\nUser: My name is Sunny.\\\\nBot: Nice to meet you, Sunny! How can I help you today?\\\\n\\\\nUser: What is my name?\\\\nBot:\",\"stream\":false}')"
     ]
   }
 }

@@ -47,7 +47,7 @@ class RivaConfig:
 class OllamaConfig:
     """Ollama LLM service configuration."""
     base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    model: str = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
+    model: str = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
     temperature: float = float(os.getenv("OLLAMA_TEMPERATURE", "0.7"))
     top_p: float = float(os.getenv("OLLAMA_TOP_P", "0.9"))
     max_tokens: int = int(os.getenv("OLLAMA_MAX_TOKENS", "150"))
